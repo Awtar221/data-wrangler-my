@@ -53,6 +53,17 @@ def _dump(obj):
     return json.dumps(_clean(obj), default=str)
 
 
+def _to_datetime(s):
+    """Parse dates tolerantly. pandas >=2 infers one format from the first row
+    and coerces every other format to NaT — format='mixed' parses per-element."""
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        try:
+            return pd.to_datetime(s, errors='coerce', format='mixed')
+        except (TypeError, ValueError):
+            return pd.to_datetime(s, errors='coerce')
+
+
 # ── Load ──────────────────────────────────────────────────────────────────────
 
 def load_csv(csv_text):
@@ -390,9 +401,7 @@ def _apply(op_type, col, params):
             # the int64 sentinel -9223372036854775808
             _df[col] = pd.to_numeric(_df[col], errors='coerce').mask(_df[col].isna())
         elif t == 'datetime':
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                _df[col] = pd.to_datetime(_df[col], errors='coerce')
+            _df[col] = _to_datetime(_df[col])
         elif t == 'string':
             # keep original nulls as NaN instead of the strings 'nan'/'NaT'
             _df[col] = _df[col].astype(str).where(_df[col].notna())
@@ -406,11 +415,26 @@ def _apply(op_type, col, params):
         _df[col] = {'lower': s.str.lower, 'upper': s.str.upper,
                     'title': s.str.title, 'strip': s.str.strip}[case]()
 
+    elif op_type == 'split_datetime':
+        dt = _to_datetime(_df[col])
+        if int(dt.notna().sum()) == 0:
+            raise ValueError(f'"{col}" contains no parseable dates')
+        parts = {
+            'year':       lambda: dt.dt.year.astype(float),
+            'quarter':    lambda: dt.dt.quarter.astype(float),
+            'month':      lambda: dt.dt.month.astype(float),
+            'month_name': lambda: dt.dt.month_name(),
+            'day':        lambda: dt.dt.day.astype(float),
+            'weekday':    lambda: dt.dt.day_name(),
+            'hour':       lambda: dt.dt.hour.astype(float),
+        }
+        for comp in params.get('components', ['year', 'month']):
+            if comp in parts:
+                _df[f'{col}_{comp}'] = parts[comp]()
+
     elif op_type == 'standardize_date':
         fmt = params.get('format', '%Y-%m-%d')
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            _df[col] = pd.to_datetime(_df[col], errors='coerce').dt.strftime(fmt)
+        _df[col] = _to_datetime(_df[col]).dt.strftime(fmt)
 
     elif op_type == 'fix_typos':
         _df[col] = _df[col].replace(params.get('mapping', {}))

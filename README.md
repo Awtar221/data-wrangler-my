@@ -1,4 +1,4 @@
-# DataWrangler
+﻿# MyDataWrangler.my
 
 **BAI21124 Data Processing and Visualisation — Project**
 
@@ -10,7 +10,7 @@ A serverless, browser-based data processing and visualisation tool. Upload a CSV
 
 Real-world datasets are rarely analysis-ready. Missing values, duplicate records, wrong data types, outliers, inconsistent formats, and spelling errors silently distort statistics and produce misleading visualisations. Cleaning this data normally requires either programming skill (pandas, R) or expensive desktop software (Power BI, Tableau Prep) — and both typically require installing software and uploading data to third-party services, which is a barrier for students and a privacy risk for sensitive datasets.
 
-**DataWrangler solves this problem**: it gives anyone with a web browser a complete data cleaning and visualisation workflow — no installation, no account, no server, no code. A full scientific Python stack (pandas, NumPy, Matplotlib, Seaborn) runs *inside the browser* via WebAssembly, so the dataset never leaves the user's machine.
+**MyDataWrangler.my solves this problem**: it gives anyone with a web browser a complete data cleaning and visualisation workflow — no installation, no account, no server, no code. A full scientific Python stack (pandas, NumPy, Matplotlib, Seaborn) runs *inside the browser* via WebAssembly, so the dataset never leaves the user's machine.
 
 ## 2. Objectives
 
@@ -32,7 +32,7 @@ Real-world datasets are rarely analysis-ready. Missing values, duplicate records
 
 There is no backend. The "server" is a static file host and can be replaced by GitHub Pages, Netlify, or any web server.
 
-## 4. How DataWrangler Works
+## 4. How MyDataWrangler.my Works
 
 ```
 ┌────────────────────────── Browser ──────────────────────────┐

@@ -159,7 +159,7 @@ function applyState(data) {
   }
   if (data.stats)   { S.stats   = data.stats; }
   if (data.quality) { S.quality = data.quality; }
-  if (data.op_log)  { S.opLog   = data.op_log; }
+  if (data.op_log)  { S.opLog   = data.op_log; renderLog(); }
 
   renderColumnList();
   updateShapeBadge();
@@ -313,8 +313,8 @@ function switchTab(name) {
     }
   });
   if (name === 'quality')   renderQualityReport();
-  if (name === 'log')       renderLog();
-  if (name === 'visualize') { populateVizSelects(); updateVizControls(); }
+  if (name === 'wrangle')   renderLog();
+  if (name === 'visualize') populateVizSelects();
 }
 
 /* ── Quality Report ─────────────────────────────────────────────────────── */
@@ -631,6 +631,26 @@ const OP_META = {
         </select>
       </div>`,
   },
+  split_datetime: {
+    needsCol: true,
+    desc: 'Parse a date/time column and add separate columns for the chosen parts (e.g. date_year, date_month). The original column is kept unchanged. Values that cannot be parsed as dates become null in the new columns.',
+    params: () => {
+      const parts = [
+        ['year', 'Year', true], ['quarter', 'Quarter', false], ['month', 'Month (number)', true],
+        ['month_name', 'Month (name)', false], ['day', 'Day of month', false],
+        ['weekday', 'Weekday name', false], ['hour', 'Hour', false],
+      ];
+      return `<div>
+        <label class="field-label">Parts to Extract</label>
+        <div class="grid grid-cols-2 gap-1.5">
+          ${parts.map(([v, label, on]) =>
+            `<label class="flex items-center gap-2 text-xs text-prussian-200 cursor-pointer">
+              <input type="checkbox" value="${v}" class="p-dtpart accent-cerulean-500" ${on ? 'checked' : ''} /> ${label}
+            </label>`).join('')}
+        </div>
+      </div>`;
+    },
+  },
   handle_outliers: {
     needsCol: true,
     desc: 'Detect outliers using the IQR method (values outside Q1 − 1.5×IQR or Q3 + 1.5×IQR) and apply a chosen remedy.',
@@ -779,6 +799,7 @@ function buildParams(opType) {
       return method === 'custom' ? { method, value: custom } : { method };
     }
     case 'convert_type':    return { target: document.getElementById('p-conv-type')?.value };
+    case 'split_datetime':  return { components: [...document.querySelectorAll('.p-dtpart:checked')].map(i => i.value) };
     case 'handle_outliers': return { method: document.getElementById('p-outlier-method')?.value };
     case 'standardize_case':return { case: document.getElementById('p-case')?.value };
     case 'standardize_date':return { format: document.getElementById('p-date-fmt')?.value };
@@ -810,6 +831,12 @@ async function applyOperation() {
   }
   if (opType === 'replace_value' && (params.old == null || params.old === '')) {
     toast('Enter a value to find.', 'error'); return;
+  }
+  if (opType === 'split_datetime' && !params.components.length) {
+    toast('Tick at least one part to extract.', 'error'); return;
+  }
+  if (opType === 'split_datetime' && !col) {
+    toast('Pick the date column to split.', 'error'); return;
   }
 
   const spinner = document.getElementById('op-spinner');
@@ -857,7 +884,7 @@ function updateLogBadge() {
 function renderLog() {
   const el = document.getElementById('log-content');
   if (!S.opLog.length) {
-    el.innerHTML = `<p class="text-prussian-500 text-sm text-center mt-12">No operations applied yet.</p>`;
+    el.innerHTML = `<p class="text-prussian-400 text-xs text-center py-3">No operations applied yet — applied steps appear here and can be undone individually.</p>`;
     return;
   }
   el.innerHTML = S.opLog.map((op, i) =>
@@ -897,30 +924,59 @@ async function undoOperation(i) {
    states the role (and whether it's required) per chart type. */
 const VIZ_COLS = {
   auto:      { x: null,                                    y: null },
-  histogram: { x: 'X — numeric column',                    y: null },
-  bar:       { x: 'X — category column',                   y: 'Y — numeric to average (optional: blank = counts)', yOptional: true },
-  scatter:   { x: 'X — numeric column',                    y: 'Y — numeric column' },
-  box:       { x: 'X — group by (optional)',               y: 'Y — numeric column', xOptional: true },
-  line:      { x: 'X — column (optional: blank = row order)', y: 'Y — numeric column', xOptional: true },
+  histogram: { x: 'X — numeric column',                    y: null,  xFilter: 'num' },
+  bar:       { x: 'X — category column',                   y: 'Y — numeric to average (optional: blank = counts)', yOptional: true, xFilter: 'cat', yFilter: 'num' },
+  scatter:   { x: 'X — numeric column',                    y: 'Y — numeric column', xFilter: 'num', yFilter: 'num' },
+  box:       { x: 'X — group by (optional)',               y: 'Y — numeric column', xOptional: true, xFilter: 'cat', yFilter: 'num' },
+  line:      { x: 'X — column (optional: blank = row order)', y: 'Y — numeric column', xOptional: true, yFilter: 'num' },
   heatmap:   { x: null,                                    y: null },
-  pie:       { x: 'Slices — category column',              y: 'Slice size — numeric to total (optional: blank = counts)', yOptional: true },
+  pie:       { x: 'Slices — category column',              y: 'Slice size — numeric to total (optional: blank = counts)', yOptional: true, xFilter: 'cat', yFilter: 'num' },
 };
 
-function populateVizSelects() {
-  const opts = S.columns.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  document.getElementById('viz-col').innerHTML  = `<option value=""></option>` + opts;
-  document.getElementById('viz-col2').innerHTML = `<option value=""></option>` + opts;
-  updateVizControls();   // set the placeholder text for the current chart type
+function isNumericCol(c) {
+  const d = S.dtypes[c] ?? '';
+  return d.startsWith('int') || d.startsWith('float');
 }
 
-function updateVizControls() {
+/* Only offer columns whose dtype suits the slot: 'num', 'cat', or undefined = all.
+   Low-cardinality numeric columns (<=20 uniques, e.g. year, rating) count as
+   categories too — they group meaningfully even though the dtype is numeric. */
+function suitsCategory(c) {
+  return !isNumericCol(c) || (S.stats[c]?.unique_count ?? Infinity) <= 20;
+}
+
+function fillVizSelect(sel, filter) {
+  const cur  = sel.value;
+  const cols = S.columns.filter(c =>
+    !filter ? true : filter === 'num' ? isNumericCol(c) : suitsCategory(c));
+  sel.innerHTML = `<option value=""></option>` +
+    cols.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  if (cols.includes(cur)) sel.value = cur;
+  return cols.length;
+}
+
+function populateVizSelects() {
+  const meta = VIZ_COLS[document.getElementById('viz-type').value] ?? VIZ_COLS.auto;
+  const nx = fillVizSelect(document.getElementById('viz-col'),  meta.xFilter);
+  const ny = fillVizSelect(document.getElementById('viz-col2'), meta.yFilter);
+  updateVizControls(nx, ny);   // set the placeholder text for the current chart type
+}
+
+function updateVizControls(nx = null, ny = null) {
   const meta = VIZ_COLS[document.getElementById('viz-type').value] ?? VIZ_COLS.auto;
   const colX = document.getElementById('viz-col');
   const colY = document.getElementById('viz-col2');
   colX.classList.toggle('hidden', !meta.x);
   colY.classList.toggle('hidden', !meta.y);
-  if (meta.x && colX.options.length) { colX.options[0].text = meta.x; colX.setAttribute('aria-label', meta.x); }
-  if (meta.y && colY.options.length) { colY.options[0].text = meta.y; colY.setAttribute('aria-label', meta.y); }
+  const noneMsg = f => f === 'num' ? 'no numeric columns — convert in Wrangle' : 'no category columns';
+  if (meta.x && colX.options.length) {
+    const label = nx === 0 ? `${meta.x.split(' — ')[0]} — ${noneMsg(meta.xFilter)}` : meta.x;
+    colX.options[0].text = label; colX.setAttribute('aria-label', label);
+  }
+  if (meta.y && colY.options.length) {
+    const label = ny === 0 ? `${meta.y.split(' — ')[0]} — ${noneMsg(meta.yFilter)}` : meta.y;
+    colY.options[0].text = label; colY.setAttribute('aria-label', label);
+  }
 }
 
 async function generateChart() {
@@ -995,10 +1051,18 @@ function downloadChart(i) {
 
 /* ── Close dataset: back to upload screen ───────────────────────────────── */
 function closeDataset() {
-  if (S.opLog.length &&
-      !confirm('Close this dataset? Applied operations will be discarded — Export CSV first if you want to keep the cleaned data.')) {
+  if (S.opLog.length) {
+    const dlg = document.getElementById('close-dialog');
+    const n = S.opLog.length;
+    document.getElementById('close-dialog-msg').textContent =
+      `${n} applied operation${n > 1 ? 's' : ''} will be discarded. Export the cleaned CSV first if you want to keep your work.`;
+    dlg.showModal();
     return;
   }
+  doCloseDataset();
+}
+
+function doCloseDataset() {
   document.getElementById('workspace').style.display   = 'none';
   document.getElementById('top-actions').style.display = 'none';
   document.getElementById('upload-screen').style.display = '';
@@ -1079,6 +1143,14 @@ function initUI() {
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
   document.getElementById('btn-close').addEventListener('click', closeDataset);
+  const closeDlg = document.getElementById('close-dialog');
+  document.getElementById('close-cancel').addEventListener('click', () => closeDlg.close());
+  document.getElementById('close-discard').addEventListener('click', () => { closeDlg.close(); doCloseDataset(); });
+  document.getElementById('close-export').addEventListener('click', async () => {
+    closeDlg.close();
+    await exportCSV();
+    doCloseDataset();
+  });
   document.getElementById('btn-reset').addEventListener('click', resetDataset);
   document.getElementById('btn-download').addEventListener('click', exportCSV);
   document.getElementById('prev-page').addEventListener('click', () => { if (S.currentPage > 0) loadPage(S.currentPage - 1); });
@@ -1087,7 +1159,7 @@ function initUI() {
   document.getElementById('op-type').addEventListener('change', renderOpParams);
   document.getElementById('op-column').addEventListener('change', renderOpParams);
   document.getElementById('btn-apply-op').addEventListener('click', applyOperation);
-  document.getElementById('viz-type').addEventListener('change', () => { updateVizControls(); populateVizSelects(); });
+  document.getElementById('viz-type').addEventListener('change', populateVizSelects);
   document.getElementById('btn-generate').addEventListener('click', generateChart);
 
   renderOpParams();

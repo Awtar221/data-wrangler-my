@@ -24,7 +24,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         print(f"  {self.address_string()} {fmt % args}")
 
 
-print(f"DataWrangler running at http://localhost:{PORT}")
+print(f"MyDataWrangler.my running at http://localhost:{PORT}")
 
 with socketserver.TCPServer(("", PORT), Handler) as httpd:
     httpd.serve_forever()

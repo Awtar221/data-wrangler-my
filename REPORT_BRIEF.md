@@ -1,4 +1,4 @@
-# DataWrangler — Report Brief (for report writer)
+﻿# MyDataWrangler.my — Report Brief (for report writer)
 
 Compact facts sheet. Everything below is true of the implementation; expand into report sections (Introduction, Objective, Method, Process/Design, Conclusion), Times New Roman 12, 1.5 spacing, IEEE references.
 
@@ -6,7 +6,7 @@ Compact facts sheet. Everything below is true of the implementation; expand into
 Browser-only CSV cleaning + visualisation tool. Python (pandas, NumPy, Matplotlib, Seaborn) runs **inside the browser** via Pyodide (WebAssembly). No backend, no install, no data leaves the machine. Run: `python serve.py` → http://localhost:5000 (server only serves static files).
 
 ## Problem
-Messy CSVs (missing values, duplicates, wrong types, outliers, inconsistent formats, typos) distort analysis. Existing fixes need coding skill (pandas/R) or installed software (Tableau Prep/Power BI) and often upload data to third parties. DataWrangler removes all three barriers: no code, no install, no data upload.
+Messy CSVs (missing values, duplicates, wrong types, outliers, inconsistent formats, typos) distort analysis. Existing fixes need coding skill (pandas/R) or installed software (Tableau Prep/Power BI) and often upload data to third parties. MyDataWrangler.my removes all three barriers: no code, no install, no data upload.
 
 ## Objectives (mirror the CLOs)
 1. Ensure data quality/reliability: detect 6 anomaly types, fix with 14 manual operations, all logged + undoable.

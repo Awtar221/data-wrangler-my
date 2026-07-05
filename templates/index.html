@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DataWrangler | Data Processing &amp; Visualisation</title>
+  <title>MyDataWrangler.my | Data Processing &amp; Visualisation</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -29,14 +29,14 @@
     }
   </script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="static/css/style.css?v=8" />
+  <link rel="stylesheet" href="static/css/style.css?v=9" />
 </head>
 <body class="h-full bg-prussian-950 text-prussian-100 font-sans overflow-hidden">
 
 <!-- ─── PYODIDE BOOT OVERLAY ─────────────────────────────────────────────── -->
 <div id="boot-overlay" class="fixed inset-0 z-[200] bg-prussian-950 flex flex-col items-center justify-center gap-6" role="status" aria-label="Initialising Python runtime">
   <div class="text-center">
-    <h1 class="text-3xl font-bold font-display text-prussian-50 mb-2 tracking-wide">DataWrangler</h1>
+    <h1 class="text-3xl font-bold font-display text-prussian-50 mb-2 tracking-wide">MyDataWrangler.my</h1>
     <p class="text-prussian-300 text-sm">Initialising Python runtime…</p>
   </div>
   <div class="w-64 bg-prussian-800 rounded-full h-1.5 overflow-hidden" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="boot-progress">
@@ -50,7 +50,7 @@
   <svg class="w-5 h-5 text-cerulean-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
     <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
   </svg>
-  <span class="text-prussian-50 font-semibold text-sm font-display tracking-wide">DataWrangler</span>
+  <span class="text-prussian-50 font-semibold text-sm font-display tracking-wide">MyDataWrangler.my</span>
   <div class="w-px h-5 bg-prussian-700 mx-1" aria-hidden="true"></div>
   <span id="file-label" class="text-prussian-400 text-xs font-mono">No file loaded</span>
   <div class="flex-1"></div>
@@ -76,31 +76,11 @@
       </svg>
     </div>
     <h1 class="text-2xl font-bold font-display text-prussian-50 mb-2">Data Processing &amp; Visualisation</h1>
-    <p class="text-prussian-300 text-sm mb-8">Upload a CSV to inspect anomalies, apply wrangling operations manually, and generate visualisations.</p>
+    <p class="text-prussian-300 text-sm mb-8">Fetch Malaysian open data — or upload your own CSV — then inspect anomalies, apply wrangling operations manually, and generate visualisations.</p>
 
-    <label id="drop-zone" for="file-input"
-         class="block border-2 border-dashed border-prussian-700 rounded-xl p-10 cursor-pointer transition-colors hover:border-cerulean-500 hover:bg-prussian-900 group">
-      <div class="flex flex-col items-center gap-3">
-        <svg class="w-10 h-10 text-prussian-500 group-hover:text-cerulean-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-        </svg>
-        <div>
-          <p class="text-prussian-200 font-medium">Drop CSV here or <span class="text-cerulean-400">browse</span></p>
-          <p class="text-prussian-400 text-xs mt-1">Supports .csv files only</p>
-        </div>
-      </div>
-      <input id="file-input" type="file" accept=".csv" class="sr-only" />
-    </label>
-
-    <div class="flex items-center gap-3 my-6" aria-hidden="true">
-      <div class="flex-1 h-px bg-prussian-800"></div>
-      <span class="text-prussian-400 text-[10px] uppercase tracking-widest">or fetch Malaysian open data</span>
-      <div class="flex-1 h-px bg-prussian-800"></div>
-    </div>
-
-    <div class="text-left bg-prussian-900 border border-prussian-800 rounded-xl p-4">
-      <p class="text-prussian-200 text-sm font-medium mb-1">Load from data.gov.my</p>
-      <p class="text-prussian-400 text-xs mb-3">Malaysia's official open data API. Pick a source, enter a dataset ID from the <a href="https://data.gov.my/data-catalogue" target="_blank" rel="noopener noreferrer" class="text-cerulean-400 hover:underline">Data Catalogue</a> page (e.g. <code class="font-mono">fuelprice</code>), and load it straight into the wrangler.</p>
+    <div class="text-left bg-prussian-900 border border-prussian-700 rounded-xl p-5">
+      <p class="text-prussian-100 text-sm font-semibold mb-1">Load Malaysian open data</p>
+      <p class="text-prussian-400 text-xs mb-3">Straight from <span class="font-medium text-prussian-300">data.gov.my</span>, Malaysia's official open data API. Pick a source, enter a dataset ID from the <a href="https://data.gov.my/data-catalogue" target="_blank" rel="noopener noreferrer" class="text-cerulean-400 hover:underline">Data Catalogue</a> page (e.g. <code class="font-mono">fuelprice</code>), and load it straight into the wrangler.</p>
       <div class="flex flex-wrap gap-2 justify-center">
         <select id="api-source" class="select-field text-xs" aria-label="API source">
           <option value="data-catalogue">Data Catalogue</option>
@@ -113,10 +93,30 @@
           <option value="fuelprice"></option>
           <option value="cpi_core"></option>
         </datalist>
-        <button id="btn-api-load" class="btn-primary text-xs px-4 py-1.5">Load</button>
+        <button id="btn-api-load" class="btn-accent text-xs px-5 py-1.5">Load</button>
       </div>
       <p id="api-status" class="text-prussian-400 text-xs mt-2 hidden" aria-live="polite"></p>
     </div>
+
+    <div class="flex items-center gap-3 my-6" aria-hidden="true">
+      <div class="flex-1 h-px bg-prussian-800"></div>
+      <span class="text-prussian-400 text-[10px] uppercase tracking-widest">or upload your own CSV</span>
+      <div class="flex-1 h-px bg-prussian-800"></div>
+    </div>
+
+    <label id="drop-zone" for="file-input"
+         class="block border-2 border-dashed border-prussian-700 rounded-xl p-6 cursor-pointer transition-colors hover:border-cerulean-500 hover:bg-prussian-900 group">
+      <div class="flex items-center justify-center gap-3">
+        <svg class="w-7 h-7 text-prussian-500 group-hover:text-cerulean-400 transition-colors flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+        <div class="text-left">
+          <p class="text-prussian-200 font-medium text-sm">Drop CSV here or <span class="text-cerulean-400">browse</span></p>
+          <p class="text-prussian-400 text-xs mt-0.5">Supports .csv files only</p>
+        </div>
+      </div>
+      <input id="file-input" type="file" accept=".csv" class="sr-only" />
+    </label>
 
     <div id="upload-error" class="hidden mt-4 text-red-400 text-sm bg-red-900/20 border border-red-800 rounded-lg px-4 py-2" role="alert"></div>
     <div id="upload-progress" class="hidden mt-6 flex items-center gap-3 justify-center text-prussian-300 text-sm" aria-live="polite">
@@ -147,11 +147,6 @@
     <button class="tab-btn" data-tab="visualize" role="tab" aria-selected="false" aria-controls="tab-visualize" id="tbtn-visualize">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
       Visualise
-    </button>
-    <button class="tab-btn" data-tab="log" role="tab" aria-selected="false" aria-controls="tab-log" id="tbtn-log">
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-      Op Log
-      <span id="log-badge" class="ml-1 bg-prussian-600 text-prussian-100 text-[10px] px-1.5 py-0.5 rounded-full hidden" aria-label="operations logged">0</span>
     </button>
   </div>
 
@@ -199,12 +194,12 @@
 
       <!-- Quality Report -->
       <div id="tab-quality" class="tab-content hidden flex-1 overflow-y-auto custom-scroll p-4" role="tabpanel" aria-labelledby="tbtn-quality" tabindex="0">
-        <div id="quality-content" class="max-w-4xl space-y-4"></div>
+        <div id="quality-content" class="max-w-4xl mx-auto space-y-4"></div>
       </div>
 
       <!-- Wrangle -->
       <div id="tab-wrangle" class="tab-content hidden flex-1 overflow-y-auto custom-scroll p-4" role="tabpanel" aria-labelledby="tbtn-wrangle" tabindex="0">
-        <div class="max-w-2xl space-y-4">
+        <div class="max-w-2xl mx-auto space-y-4">
           <div class="quality-card">
             <h3>Choose Operation</h3>
             <p class="text-prussian-400 text-xs mb-4">Select an operation, configure it, then click Apply. Nothing changes until you click.</p>
@@ -223,6 +218,7 @@
                   </optgroup>
                   <optgroup label="Data Types">
                     <option value="convert_type">Convert Column Type</option>
+                    <option value="split_datetime">Split Date into Parts</option>
                   </optgroup>
                   <optgroup label="Outliers">
                     <option value="handle_outliers">Handle Outliers</option>
@@ -266,6 +262,14 @@
 
           <!-- Operation preview hint -->
           <div id="op-description" class="quality-card text-xs text-prussian-300"></div>
+
+          <!-- Operation log -->
+          <div class="quality-card">
+            <h3 class="flex items-center gap-2">Operation Log
+              <span id="log-badge" class="bg-prussian-600 text-prussian-100 text-[10px] px-1.5 py-0.5 rounded-full hidden" aria-label="operations logged">0</span>
+            </h3>
+            <div id="log-content"></div>
+          </div>
         </div>
       </div>
 
@@ -294,21 +298,25 @@
         <div id="chart-gallery" class="flex-1 overflow-y-auto custom-scroll p-4 grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-min" aria-live="polite" aria-label="Generated charts"></div>
       </div>
 
-      <!-- Op Log -->
-      <div id="tab-log" class="tab-content hidden flex-1 overflow-y-auto custom-scroll p-4" role="tabpanel" aria-labelledby="tbtn-log" tabindex="0">
-        <div id="log-content" class="max-w-2xl">
-          <p class="text-prussian-300 text-sm text-center mt-12">No operations applied yet.</p>
-        </div>
-      </div>
-
     </main>
   </div>
 </div>
+
+<!-- ─── CLOSE-DATASET CONFIRM ────────────────────────────────────────────── -->
+<dialog id="close-dialog" class="confirm-dialog" aria-labelledby="close-dialog-title">
+  <h3 id="close-dialog-title" class="text-prussian-50 font-display font-semibold text-sm mb-2">Close this dataset?</h3>
+  <p id="close-dialog-msg" class="text-prussian-300 text-xs leading-relaxed mb-4"></p>
+  <div class="flex flex-wrap gap-2 justify-end">
+    <button id="close-cancel" class="btn-ghost text-xs px-3 py-1.5">Cancel</button>
+    <button id="close-export" class="btn-primary text-xs px-3 py-1.5">Export CSV &amp; Close</button>
+    <button id="close-discard" class="btn-danger text-xs px-3 py-1.5">Discard &amp; Close</button>
+  </div>
+</dialog>
 
 <!-- ─── TOAST ────────────────────────────────────────────────────────────── -->
 <div id="toast-container" class="fixed bottom-5 right-5 space-y-2 z-[100]" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-<script src="static/js/app.js?v=18"></script>
+<script src="static/js/app.js?v=23"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Product
+﻿# Product
 
 ## Register
 
@@ -10,7 +10,7 @@ Anyone who works with CSV datasets and needs to detect data quality issues, appl
 
 ## Product Purpose
 
-DataWrangler is a serverless, browser-based data processing and visualisation tool. Users upload a CSV, inspect it for six categories of anomaly (missing values, duplicates, type mismatches, outliers, format inconsistencies, spelling errors), apply wrangling operations manually one at a time, and generate charts — all without a backend server. Python runs in-browser via Pyodide (WebAssembly). Success means a user can go from a messy CSV to a clean, exported dataset and a set of insight charts in a single session, with no installation and no data leaving their machine.
+MyDataWrangler.my is a serverless, browser-based data processing and visualisation tool. Users upload a CSV, inspect it for six categories of anomaly (missing values, duplicates, type mismatches, outliers, format inconsistencies, spelling errors), apply wrangling operations manually one at a time, and generate charts — all without a backend server. Python runs in-browser via Pyodide (WebAssembly). Success means a user can go from a messy CSV to a clean, exported dataset and a set of insight charts in a single session, with no installation and no data leaving their machine.
 
 ## Brand Personality
 
@@ -20,9 +20,9 @@ The tool is quietly powerful — like Linear or Notion for data work. It does no
 
 ## Anti-references
 
-- **Overly playful / consumer apps**: bright palette, oversized rounded corners, emoji-heavy UI, animations that feel like a social app. DataWrangler is a tool, not a toy.
+- **Overly playful / consumer apps**: bright palette, oversized rounded corners, emoji-heavy UI, animations that feel like a social app. MyDataWrangler.my is a tool, not a toy.
 - **Generic Bootstrap / Excel clones**: blue header bars, striped table rows, default browser form controls, spreadsheet-software aesthetics from 2012.
-- **Generic dark SaaS (Vercel clone)**: pure-black bg, white text, purple accent — the oversaturated 2024 dark-mode default. The prussian-blue palette distinguishes DataWrangler from this lane.
+- **Generic dark SaaS (Vercel clone)**: pure-black bg, white text, purple accent — the oversaturated 2024 dark-mode default. The prussian-blue palette distinguishes MyDataWrangler.my from this lane.
 
 ## Design Principles
 
