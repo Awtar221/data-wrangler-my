@@ -15,11 +15,11 @@ Messy CSVs (missing values, duplicates, wrong types, outliers, inconsistent form
 
 ## Method / pipeline (7 steps)
 1. **Boot**: browser downloads Pyodide runtime (~30–60 MB, cached after first load).
-2. **Upload**: CSV → in-memory pandas DataFrame; original copy kept.
-3. **Detect** (automatic quality report): missing = null %, duplicates = exact match, type issues = ≥70% parseable as numeric/datetime, outliers = IQR (Q1−1.5×IQR, Q3+1.5×IQR), format issues = date-pattern + casing analysis, typos = difflib fuzzy match (cutoff 0.85). Findings ranked by severity; "Fix" buttons pre-fill operations but never auto-apply.
+2. **Load**: CSV upload, or live fetch from data.gov.my open data API (Data Catalogue / OpenDOSM / Weather endpoints; JSON records → json_normalize → DataFrame, nested fields auto-flattened); original copy kept.
+3. **Detect** (automatic quality report): missing = null %, duplicates = exact match, type issues = ≥70% parseable as numeric/datetime, outliers = IQR (Q1−1.5×IQR, Q3+1.5×IQR), format issues = date-pattern + casing analysis, typos = difflib fuzzy match (cutoff 0.85). Findings ranked by severity; "Fix" buttons pre-fill operations but never auto-apply. Missing/outlier findings additionally show inline mini charts (distribution histogram with mean+median markers; box plot with outlier dots) and a rule-based recommendation with stated reasoning: |skew| ≤ 0.5 → mean fill, skewed → median, categorical → mode; outliers >5% or heavy skew → cap (Winsorize), else remove.
 4. **Wrangle**: 14 explicit ops — fill missing (mean/median/mode/ffill/bfill/zero/custom), drop missing rows, remove duplicates, convert type, handle outliers (cap/remove/nullify/z-score), standardise case, standardise dates, trim whitespace, fix typos, find & replace, filter rows, drop column, rename column.
 5. **Audit**: operation log; any single op undoable (replays the rest from original data).
-6. **Visualise**: histogram, bar, scatter (+trend line, r), box (+group-by), line, correlation heatmap, pie, auto-overview. Matplotlib renders PNG in-browser.
+6. **Visualise**: histogram, bar (optional second numeric column → mean per category), scatter (+trend line, r), box (+group-by, red outlier dots), line, correlation heatmap, pie, auto-overview. Matplotlib renders PNG in-browser; every chart downloadable as JPG.
 7. **Export**: cleaned CSV downloads directly from browser.
 
 ## Design decisions worth citing

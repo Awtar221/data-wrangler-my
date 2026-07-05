@@ -14,7 +14,7 @@ Real-world datasets are rarely analysis-ready. Missing values, duplicate records
 
 ## 2. Objectives
 
-1. **Ensure data quality and reliability** — automatically detect six categories of anomaly (missing values, duplicates, type mismatches, outliers, inconsistent formats, spelling errors) and provide 14 manual cleaning operations to remedy them, with every step logged, undoable, and reversible.
+1. **Ensure data quality and reliability** — automatically detect six categories of anomaly (missing values, duplicates, type mismatches, outliers, inconsistent formats, spelling errors), recommend statistically appropriate fixes with visual evidence (distribution sparklines, box plots), and provide 14 manual cleaning operations, with every step logged, undoable, and reversible.
 2. **Create effective visualisations by applying design principles** — eight chart types rendered with a colour-blind-validated categorical palette, WCAG-checked contrast against the dark theme, recessive gridlines, and single-hue encoding for nominal series.
 3. **Apply data processing and visualisation tools in a practical scenario** — deliver pandas/NumPy processing and Matplotlib/Seaborn charting through an approachable point-and-click interface usable by non-programmers.
 4. **Guarantee transparency and trust** — nothing is applied automatically; every operation is user-initiated, recorded in an operation log, individually undoable, and the original dataset is always recoverable via Reset.
@@ -48,7 +48,7 @@ There is no backend. The "server" is a static file host and can be replaced by G
 ```
 
 1. **Boot** — the page downloads the Pyodide runtime and Python packages (~30–60 MB, cached by the browser afterwards), then loads the app's two Python modules.
-2. **Upload** — a dropped CSV is read as text and parsed into an in-memory pandas DataFrame. A copy of the original is kept for Reset/Undo.
+2. **Load data** — either drop a CSV file, or fetch a dataset directly from **data.gov.my** (Malaysia's official open data portal) via its Data Catalogue, OpenDOSM, or Weather APIs — enter a dataset ID (e.g. `fuelprice`) and the records load straight into a pandas DataFrame (nested fields are auto-flattened). A copy of the original is kept for Reset/Undo.
 3. **Detect** — a quality report runs automatically over the whole dataset:
 
    | Anomaly | Detection method |
@@ -60,11 +60,16 @@ There is no backend. The "server" is a static file host and can be replaced by G
    | Inconsistent formats | Date-pattern matching + casing distribution |
    | Spelling / typos | Fuzzy string matching (difflib, cutoff 0.85) |
 
-   Each finding shows severity and a **Fix** button that pre-fills the matching operation — but never applies it automatically.
+   Each finding shows severity, and for missing values and outliers the report goes further:
+   - an inline **mini chart** — a distribution histogram with mean/median markers for missing values, and a box plot with the actual outlier points drawn as red dots for outliers — so the user can *see* the shape of the data before deciding;
+   - a **rule-based recommendation** with its reasoning, derived from the column's skewness and outlier share (e.g. right-skewed → fill with median, not mean; >5% outliers → cap rather than delete);
+   - a **Fix with …** button that jumps to Wrangle with the column, operation, *and recommended method* pre-selected — but never applies anything automatically.
+
+   Column names throughout the report are clickable and navigate to that column in the Data Preview table.
 4. **Wrangle** — the user picks one of 14 explicit operations (fill/drop missing, remove duplicates, convert types, cap/remove/nullify outliers, standardise case and dates, fix typos, find & replace, filter rows, drop/rename columns), configures it, and clicks Apply. State updates flow back to the UI as JSON.
 5. **Audit** — every applied operation appears in the Op Log with its parameters. Any single operation can be undone: the app replays the remaining operations from the original data, so history stays consistent.
-6. **Visualise** — eight chart types (histogram, bar, scatter with trend line and correlation coefficient, box plot with group-by, line, correlation heatmap, pie, and an automatic overview). Charts are rendered by Matplotlib inside the browser and returned as PNG images, styled with a validated dark-theme palette.
-7. **Export** — the cleaned dataset downloads as CSV directly from the browser; no server round-trip.
+6. **Visualise** — eight chart types (histogram, bar, scatter with trend line and correlation coefficient, box plot with group-by, line, correlation heatmap, pie, and an automatic overview). The bar chart accepts an optional second numeric column to plot the mean per category instead of raw counts; charts that cannot be drawn (e.g. a heatmap on fewer than two numeric columns) explain why and what to do instead of failing silently. Charts are rendered by Matplotlib inside the browser, styled with a validated dark-theme palette, and each one can be **downloaded as a JPG** from its card.
+7. **Export** — the cleaned dataset downloads as CSV directly from the browser; no server round-trip. **Close** returns to the upload screen (with a warning if unexported operations would be discarded) to start on a fresh dataset.
 
 ## 5. How to Run
 

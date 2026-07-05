@@ -73,20 +73,33 @@
 }
 .btn-ghost:hover { border-color: var(--faint); color: var(--text); }
 
+.col-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+}
+.col-link:hover,
+.col-link:focus-visible {
+  text-decoration: underline;
+  color: var(--cerulean, #47c7eb);
+}
+
 .op-btn {
   text-align: left;
-  padding: 5px 8px;
+  padding: 5px 12px;
   font-size: 11px;
   color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: transparent;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
   cursor: pointer;
 }
 .op-btn:hover {
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--accent);
   color: var(--text);
 }
 
@@ -167,7 +180,12 @@
   user-select: none;
 }
 .data-table th:hover { color: var(--text); }
-.data-table th.col-selected { color: var(--accent); background: rgba(25,185,230,0.08); }
+.data-table th.col-selected {
+  color: var(--accent);
+  /* tint layered over an opaque base — a transparent bg on a sticky header
+     lets scrolled cell text show through it */
+  background: linear-gradient(rgba(25,185,230,0.08), rgba(25,185,230,0.08)), var(--surface-2);
+}
 .data-table td {
   padding: 4px 12px;
   font-size: 11px;
@@ -183,6 +201,21 @@
 .data-table td.null-cell { color: var(--faint); font-style: italic; }
 .data-table td.outlier-cell { color: #f59e0b; }
 .data-table td.col-selected { background: rgba(25,185,230,0.05); }
+.legend-swatch {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.data-table td.changed-cell {
+  background: rgba(25,185,230,0.14);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
 
 /* ── Form Controls ─────────────────────────────────────────── */
 .select-field, .input-field {
@@ -322,7 +355,11 @@
   box-shadow: 0 4px 16px rgba(7, 12, 29, 0.55);
 }
 .chart-card h4 {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
@@ -330,6 +367,24 @@
   background: var(--surface-2);
 }
 .chart-card img { width: 100%; display: block; }
+
+/* single chart fills the whole gallery row — but stays within one screen */
+.chart-card-wide { grid-column: 1 / -1; }
+.chart-card-wide img {
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 230px);   /* header + tab bar + viz controls + card title */
+  margin: 0 auto;
+}
+
+.chart-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
 
 @keyframes chartIn {
   from { opacity: 0; transform: translateY(6px); }

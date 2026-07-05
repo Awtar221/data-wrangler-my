@@ -61,7 +61,7 @@ def generate(config_json):
     charts = []
 
     if   kind == 'histogram' and col:  charts.append(_histogram(col))
-    elif kind == 'bar'       and col:  charts.append(_bar(col))
+    elif kind == 'bar'       and col:  charts.append(_bar(col, col2))
     elif kind == 'scatter'   and col and col2: charts.append(_scatter(col, col2))
     elif kind == 'box'       and col:  charts.append(_box(col, col2))
     elif kind == 'line'      and col:  charts.append(_line(col, col2))
@@ -87,8 +87,21 @@ def _histogram(col):
     return {'type': 'histogram', 'title': f'Distribution  {col}', 'data': _b64(fig)}
 
 
-def _bar(col):
-    counts = _df[col].value_counts().head(15)
+def _bar(col, val_col=None):
+    # optional second (numeric) column: bars become mean of val_col per category
+    if val_col and val_col in _df.columns and val_col != col:
+        vals = pd.to_numeric(_df[val_col], errors='coerce')
+        agg = vals.groupby(_df[col]).mean().dropna().sort_values(ascending=False).head(15)
+        if not len(agg):
+            return {'type': 'message', 'title': f'{val_col} by {col}',
+                    'message': f'"{val_col}" has no numeric values to aggregate. '
+                               'Pick a numeric second column, or convert it in Wrangle first.'}
+        counts, ylabel = agg, f'Mean {val_col}'
+        title = f'Mean {val_col} by {col}'
+    else:
+        counts, ylabel = _df[col].value_counts().head(15), 'Count'
+        title = f'Value Counts  {col}'
+
     n = len(counts)
     fig, ax = plt.subplots(figsize=(max(7, n * 0.6), 4.5))
     _ax(fig, ax)
@@ -98,10 +111,10 @@ def _bar(col):
     ax.xaxis.grid(False)
     ax.set_xticks(range(n))
     ax.set_xticklabels([str(v)[:20] for v in counts.index], rotation=35, ha='right', fontsize=8)
-    ax.set_title(f'Value Counts  {col}', fontsize=12, pad=10)
-    ax.set_ylabel('Count')
+    ax.set_title(title, fontsize=12, pad=10)
+    ax.set_ylabel(ylabel)
     plt.tight_layout()
-    return {'type': 'bar', 'title': f'Value Counts  {col}', 'data': _b64(fig)}
+    return {'type': 'bar', 'title': title, 'data': _b64(fig)}
 
 
 def _scatter(col1, col2):
@@ -131,8 +144,8 @@ def _box(col, group_col=None):
     bp_kw = dict(patch_artist=True, boxprops=dict(facecolor=BORDER, color=SERIES, linewidth=1.2),
                  medianprops=dict(color=EMPH, linewidth=2),
                  whiskerprops=dict(color=MUTED), capprops=dict(color=MUTED),
-                 flierprops=dict(marker='o', markerfacecolor=MUTED, markeredgecolor='none',
-                                 markersize=3, alpha=0.6))
+                 flierprops=dict(marker='o', markerfacecolor=PALETTE[5], markeredgecolor='none',
+                                 markersize=3.5, alpha=0.85))
     if group_col and group_col in _df.columns:
         grouped = [(str(k)[:15], g[col].dropna().values) for k, g in _df.groupby(group_col)][:10]
         labels  = [k for k, _ in grouped]
@@ -151,7 +164,9 @@ def _box(col, group_col=None):
 def _heatmap():
     num_cols = _df.select_dtypes(include=np.number).columns.tolist()
     if len(num_cols) < 2:
-        return None
+        return {'type': 'message', 'title': 'Correlation Heatmap',
+                'message': f'A correlation heatmap needs at least 2 numeric columns — this dataset currently has {len(num_cols)}. '
+                           'If your numbers are stored as text, use Wrangle → Convert Column Type → Numeric first.'}
     cols = num_cols[:12]
     corr = _df[cols].corr()
     size = max(6, len(cols))

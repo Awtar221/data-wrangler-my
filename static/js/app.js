@@ -10,6 +10,7 @@ const S = {
   currentPage: 0,
   totalRows:   0,
   pageSize:    100,
+  ignored:     new Set(),   // quality findings the user chose to ignore ("section:col")
 };
 
 /* ── Boot: load Pyodide + packages + Python modules ────────────────────── */
@@ -93,6 +94,54 @@ async function handleUpload(file) {
   }
 }
 
+/* ── data.gov.my API ────────────────────────────────────────────────────── */
+const API_BASE = 'https://api.data.gov.my/';
+
+function apiNeedsId() {
+  return !document.getElementById('api-source').value.startsWith('weather');
+}
+
+function updateApiControls() {
+  document.getElementById('api-id').classList.toggle('hidden', !apiNeedsId());
+}
+
+async function loadFromApi() {
+  const source = document.getElementById('api-source').value;
+  const id     = document.getElementById('api-id').value.trim();
+  const status = document.getElementById('api-status');
+  const btn    = document.getElementById('btn-api-load');
+
+  if (apiNeedsId() && !id) { toast('Enter a dataset ID (see the data.gov.my Data Catalogue page).', 'error'); return; }
+
+  const url = new URL(API_BASE + source);
+  if (apiNeedsId()) url.searchParams.set('id', id);
+
+  btn.disabled = true;
+  status.classList.remove('hidden');
+  status.textContent = 'Fetching from data.gov.my…';
+
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`data.gov.my responded ${r.status} — check the dataset ID.`);
+    const data = await r.json();
+    const records = Array.isArray(data) ? data : (data.data ?? []);
+    if (!records.length) throw new Error('The API returned no rows for this query.');
+
+    status.textContent = `Parsing ${records.length.toLocaleString()} rows…`;
+    S.pyodide.globals.set('_api_json', JSON.stringify(records));
+    const raw = await py('load_records(_api_json)');
+    applyState(JSON.parse(raw));
+    enterWorkspace(`data.gov.my — ${apiNeedsId() ? id : source}`);
+    toast(`Loaded ${records.length.toLocaleString()} rows from data.gov.my`, 'success');
+    status.classList.add('hidden');
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = 'text-red-400 text-xs mt-2';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function showUploadError(msg) {
   const el = document.getElementById('upload-error');
   el.textContent = msg;
@@ -121,6 +170,7 @@ function applyState(data) {
 
 /* ── Workspace transition ───────────────────────────────────────────────── */
 function enterWorkspace(filename) {
+  S.ignored = new Set();
   document.getElementById('upload-screen').style.display = 'none';
   document.getElementById('workspace').style.display = 'flex';
   document.getElementById('top-actions').style.display = 'flex';
@@ -151,7 +201,7 @@ function renderColumnList() {
     if ((qr.missing?.[col]?.pct ?? 0) > 30) dot = 'dot-error';
 
     const sel = col === S.selectedCol ? 'selected' : '';
-    return `<div class="col-item ${sel}" role="listitem button" tabindex="0" onclick="selectCol('${esc(col)}')" onkeydown="if(event.key==='Enter'||event.key===' ')selectCol('${esc(col)}')" aria-pressed="${col === S.selectedCol}" title="${esc(col)}">
+    return `<div class="col-item ${sel}" role="listitem button" tabindex="0" onclick="gotoColumn('${esc(col)}')" onkeydown="if(event.key==='Enter'||event.key===' ')gotoColumn('${esc(col)}')" aria-pressed="${col === S.selectedCol}" title="View ${esc(col)} in Data Preview">
       <span class="col-type-badge ${tcls}" aria-label="${tlbl} column">${tlbl}</span>
       <span class="flex-1 truncate">${esc(col)}</span>
       <span class="col-quality-dot ${dot}" aria-hidden="true"></span>
@@ -160,12 +210,32 @@ function renderColumnList() {
 }
 
 function selectCol(col) {
+  if (S.selectedCol === col) col = null;   // clicking the selected column deselects it
   S.selectedCol = col;
   renderColumnList();
   highlightTableCol(col);
   // Pre-fill the wrangle tab's column selector
   const sel = document.getElementById('op-column');
-  if (sel) sel.value = col;
+  if (sel) sel.value = col ?? '';
+}
+
+/* Select a column AND navigate to it in the Data Preview table */
+function gotoColumn(col) {
+  const deselecting = S.selectedCol === col;
+  selectCol(col);
+  if (deselecting) return;                 // toggled off — stay put, no navigation
+  switchTab('preview');
+  requestAnimationFrame(() => {
+    const idx = S.columns.indexOf(col);
+    if (idx < 0) return;
+    document.querySelectorAll('#table-head th')[idx]
+      ?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  });
+}
+
+/* Clickable column name used across the quality report */
+function colLink(col, extra = '') {
+  return `<button class="col-link log-col text-left ${extra}" onclick="gotoColumn('${esc(col)}')" title="View this column in Data Preview">${esc(col)}</button>`;
 }
 
 /* ── Data table ─────────────────────────────────────────────────────────── */
@@ -180,20 +250,26 @@ function renderTable(preview) {
     `Page ${page + 1} / ${Math.ceil(total_rows / page_size)}`;
 
   const outlierCols = new Set(Object.keys(S.quality.outliers ?? {}));
+  const changedByCol = {};
+  for (const [c, positions] of Object.entries(preview.changed_cells ?? {})) {
+    changedByCol[c] = new Set(positions);
+  }
 
   document.getElementById('table-head').innerHTML =
     `<tr>${columns.map(c =>
       `<th class="${c === S.selectedCol ? 'col-selected' : ''}" onclick="selectCol('${esc(c)}')">${esc(c)}</th>`
     ).join('')}</tr>`;
 
-  document.getElementById('table-body').innerHTML = data.map(row =>
+  document.getElementById('table-body').innerHTML = data.map((row, ri) =>
     `<tr>${columns.map(c => {
-      const val    = row[c];
-      const isNull = val === null || val === undefined;
-      const isOut  = !isNull && outlierCols.has(c);
-      const colSel = c === S.selectedCol ? 'col-selected' : '';
-      const cls    = [colSel, isNull ? 'null-cell' : isOut ? 'outlier-cell' : ''].filter(Boolean).join(' ');
-      return `<td class="${cls}" title="${esc(String(val ?? ''))}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
+      const val     = row[c];
+      const isNull  = val === null || val === undefined;
+      const isOut   = !isNull && outlierCols.has(c);
+      const changed = changedByCol[c]?.has(ri);
+      const colSel  = c === S.selectedCol ? 'col-selected' : '';
+      const cls     = [colSel, changed ? 'changed-cell' : '', isNull ? 'null-cell' : isOut ? 'outlier-cell' : ''].filter(Boolean).join(' ');
+      const tip     = changed ? 'Changed by the last operation' : esc(String(val ?? ''));
+      return `<td class="${cls}" title="${tip}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
     }).join('')}</tr>`
   ).join('');
 }
@@ -242,14 +318,40 @@ function switchTab(name) {
 }
 
 /* ── Quality Report ─────────────────────────────────────────────────────── */
+function notIgnored(section) {
+  return ([col]) => !S.ignored.has(`${section}:${col}`);
+}
+
+function ignoreFinding(section, col) {
+  S.ignored.add(`${section}:${col}`);
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function restoreFinding(key) {
+  S.ignored.delete(key);
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function restoreAllIgnored() {
+  S.ignored.clear();
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function ignoreBtn(section, col) {
+  return `<button class="op-btn ml-1" onclick="ignoreFinding('${section}','${esc(col)}')" title="Hide this finding from the report">Ignore</button>`;
+}
+
 function updateQualityBadge() {
   const qr = S.quality;
-  const n  = Object.keys(qr.missing ?? {}).length
-    + ((qr.duplicates ?? 0) > 0 ? 1 : 0)
-    + Object.keys(qr.type_issues ?? {}).length
-    + Object.keys(qr.outliers ?? {}).length
-    + Object.keys(qr.inconsistent_formats ?? {}).length
-    + Object.keys(qr.typo_candidates ?? {}).length;
+  const n  = Object.entries(qr.missing ?? {}).filter(notIgnored('missing')).length
+    + ((qr.duplicates ?? 0) > 0 && !S.ignored.has('duplicates:*') ? 1 : 0)
+    + Object.entries(qr.type_issues ?? {}).filter(notIgnored('type_issues')).length
+    + Object.entries(qr.outliers ?? {}).filter(notIgnored('outliers')).length
+    + Object.entries(qr.inconsistent_formats ?? {}).filter(notIgnored('inconsistent_formats')).length
+    + Object.entries(qr.typo_candidates ?? {}).filter(notIgnored('typo_candidates')).length;
   const b = document.getElementById('quality-badge');
   b.textContent = n;
   b.classList.toggle('hidden', n === 0);
@@ -266,77 +368,96 @@ function renderQualityReport() {
   </div>`;
 
   /* Missing */
-  if (Object.keys(qr.missing ?? {}).length) {
+  const missingRows = Object.entries(qr.missing ?? {}).filter(notIgnored('missing'));
+  if (missingRows.length) {
     html += aSection('Missing Values', '#f59e0b', iconInfo(),
-      Object.entries(qr.missing).map(([col, i]) =>
-        `<div class="anomaly-row">
-          ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
-          <span class="log-col flex-1">${esc(col)}</span>
-          <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
-          <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}')">Fix</button>
+      missingRows.map(([col, i]) =>
+        `<div class="anomaly-row flex-col items-stretch gap-1.5">
+          <div class="flex items-center gap-2 w-full">
+            ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
+            ${colLink(col, 'flex-1')}
+            <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
+            <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}','${i.recommend?.method ?? ''}')">
+              Fix${i.recommend ? ' with ' + esc(i.recommend.label) : ''}</button>
+            ${ignoreBtn('missing', col)}
+          </div>
+          ${recommendRow(i)}
         </div>`).join(''));
   }
 
   /* Duplicates */
-  if ((qr.duplicates ?? 0) > 0) {
+  if ((qr.duplicates ?? 0) > 0 && !S.ignored.has('duplicates:*')) {
     html += aSection('Duplicate Rows', '#ef4444', iconCopy(),
       `<div class="anomaly-row">
         ${pill('MED','sev-medium')}
         <span class="text-prussian-200 flex-1">${qr.duplicates.toLocaleString()} exact duplicate rows</span>
         <button class="op-btn" onclick="prefillWrangle('remove_duplicates',null)">Fix</button>
+        ${ignoreBtn('duplicates', '*')}
       </div>`);
   }
 
   /* Type issues */
-  if (Object.keys(qr.type_issues ?? {}).length) {
+  const typeRows = Object.entries(qr.type_issues ?? {}).filter(notIgnored('type_issues'));
+  if (typeRows.length) {
     html += aSection('Incorrect Data Types', '#0684f9', iconCode(),
-      Object.entries(qr.type_issues).map(([col, i]) =>
+      typeRows.map(([col, i]) =>
         `<div class="anomaly-row">
           ${pill('TYPE','sev-medium')}
-          <span class="log-col flex-1">${esc(col)}</span>
+          ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[11px]">${i.current} → ${i.suggested} (${i.convertible_pct}% convertible)</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('convert_type','${esc(col)}')">Fix</button>
+          ${ignoreBtn('type_issues', col)}
         </div>`).join(''));
   }
 
   /* Outliers */
-  if (Object.keys(qr.outliers ?? {}).length) {
+  const outlierRows = Object.entries(qr.outliers ?? {}).filter(notIgnored('outliers'));
+  if (outlierRows.length) {
     html += aSection('Outliers', '#f59e0b', iconWarn(),
-      Object.entries(qr.outliers).map(([col, i]) =>
-        `<div class="anomaly-row">
-          ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
-          <span class="log-col flex-1">${esc(col)}</span>
-          <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
-          <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}')">Fix</button>
+      outlierRows.map(([col, i]) =>
+        `<div class="anomaly-row flex-col items-stretch gap-1.5">
+          <div class="flex items-center gap-2 w-full">
+            ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
+            ${colLink(col, 'flex-1')}
+            <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
+            <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}','${i.recommend?.method ?? ''}')">
+              Fix with ${esc(i.recommend?.label ?? '')}</button>
+            ${ignoreBtn('outliers', col)}
+          </div>
+          ${recommendRow(i, i.lower_bound, i.upper_bound)}
         </div>`).join(''));
   }
 
   /* Inconsistent formats */
-  if (Object.keys(qr.inconsistent_formats ?? {}).length) {
+  const fmtRows = Object.entries(qr.inconsistent_formats ?? {}).filter(notIgnored('inconsistent_formats'));
+  if (fmtRows.length) {
     html += aSection('Inconsistent Formats', '#adbceb', iconEdit(),
-      Object.entries(qr.inconsistent_formats).map(([col, i]) => {
+      fmtRows.map(([col, i]) => {
         const detail = i.type === 'date_format'
           ? Object.entries(i.formats).map(([f, c]) => `${f}:${c}`).join(' | ')
           : `lower:${i.lower} upper:${i.upper} title:${i.title} mixed:${i.mixed}`;
         const op = i.type === 'date_format' ? 'standardize_date' : 'standardize_case';
         return `<div class="anomaly-row">
           ${pill(i.type === 'date_format' ? 'DATE' : 'CASE','sev-low')}
-          <span class="log-col flex-1">${esc(col)}</span>
+          ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[10px]">${esc(detail)}</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('${op}','${esc(col)}')">Fix</button>
+          ${ignoreBtn('inconsistent_formats', col)}
         </div>`;
       }).join(''));
   }
 
   /* Typos */
-  if (Object.keys(qr.typo_candidates ?? {}).length) {
+  const typoRows = Object.entries(qr.typo_candidates ?? {}).filter(notIgnored('typo_candidates'));
+  if (typoRows.length) {
     html += aSection('Spelling / Typo Candidates', '#adbceb', iconEdit(),
-      Object.entries(qr.typo_candidates).map(([col, mapping]) =>
+      typoRows.map(([col, mapping]) =>
         `<div class="anomaly-row flex-col items-start gap-2">
           <div class="flex items-center gap-2 w-full">
             ${pill('TYPO','sev-low')}
-            <span class="log-col">${esc(col)}</span>
+            ${colLink(col)}
             <button class="op-btn ml-auto" onclick="prefillWrangle('fix_typos','${esc(col)}')">Fix</button>
+            ${ignoreBtn('typo_candidates', col)}
           </div>
           <div class="text-[10px] text-prussian-400 pl-10 space-y-0.5">
             ${Object.entries(mapping).slice(0, 5).map(([k, v]) =>
@@ -348,20 +469,110 @@ function renderQualityReport() {
 
   if (!html.includes('anomaly-row')) {
     html += `<div class="quality-card text-center py-8">
-      <p class="text-green-400 font-medium mb-1">No anomalies detected</p>
-      <p class="text-prussian-400 text-xs">Dataset looks clean.</p>
+      <p class="text-green-400 font-medium mb-1">No anomalies ${S.ignored.size ? 'shown' : 'detected'}</p>
+      <p class="text-prussian-400 text-xs">${S.ignored.size ? 'All remaining findings are ignored (see below).' : 'Dataset looks clean.'}</p>
+    </div>`;
+  }
+
+  /* Ignored findings */
+  if (S.ignored.size) {
+    const names = { missing: 'Missing values', duplicates: 'Duplicate rows', type_issues: 'Data type',
+                    outliers: 'Outliers', inconsistent_formats: 'Format', typo_candidates: 'Typos' };
+    html += `<div class="quality-card">
+      <h3 class="text-prussian-400">Ignored findings (${S.ignored.size})</h3>
+      <div class="space-y-0.5">
+        ${[...S.ignored].map(key => {
+          const [section, col] = key.split(/:(.*)/s);
+          return `<div class="anomaly-row">
+            <span class="text-prussian-400 text-[11px] flex-1">${names[section] ?? section}${col !== '*' ? ' — ' : ''}${col !== '*' ? `<span class="log-col">${esc(col)}</span>` : ''}</span>
+            <button class="op-btn" onclick="restoreFinding('${esc(key)}')">Restore</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <button class="op-btn mt-2" onclick="restoreAllIgnored()">Restore all</button>
     </div>`;
   }
 
   document.getElementById('quality-content').innerHTML = html;
 }
 
-/* Shortcut: jump to Wrangle tab with operation pre-filled */
-function prefillWrangle(opType, col) {
+/* Recommendation row: sparkline histogram + reason text.
+   lo/hi (IQR bounds) tint out-of-range bins red on outlier rows. */
+function recommendRow(i, lo = null, hi = null) {
+  if (!i.recommend) return '';
+  const spark = i.box ? sparkBox(i.box) : i.dist ? sparkHist(i.dist, lo, hi) : '';
+  const legend = i.box
+    ? `<span class="text-[9px] text-prussian-400 whitespace-nowrap">
+         <span style="color:#3987e5">▬ IQR box</span>&ensp;<span style="color:#47c7eb">┊ median</span>&ensp;<span style="color:#e66767">• outliers</span>
+       </span>`
+    : i.dist
+    ? `<span class="text-[9px] text-prussian-400 whitespace-nowrap">
+         <span style="color:#c98500">┊ mean</span>&ensp;<span style="color:#47c7eb">┊ median</span>
+       </span>`
+    : '';
+  return `<div class="flex items-center gap-3 pl-10">
+    ${spark}${legend}
+    <span class="text-prussian-300 text-[10px] leading-snug flex-1">
+      <span class="text-cerulean-400 font-medium">Suggested: ${esc(i.recommend.label)}.</span>
+      ${esc(i.recommend.reason)}
+    </span>
+  </div>`;
+}
+
+function sparkHist(d, lo = null, hi = null) {
+  const W = 280, H = 60, n = d.bins.length;
+  const max = Math.max(...d.bins, 1);
+  const bw = W / n;
+  const span = (d.max - d.min) || 1;
+  const x = v => Math.min(W, Math.max(0, (v - d.min) / span * W));
+  const bars = d.bins.map((c, i) => {
+    const h = Math.max(c / max * (H - 3), c > 0 ? 1.5 : 0);
+    const binLo = d.min + span * i / n, binHi = d.min + span * (i + 1) / n;
+    const out = (lo != null && binHi <= lo) || (hi != null && binLo >= hi);
+    return `<rect x="${(i * bw + 0.5).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${out ? '#e66767' : '#3987e5'}" opacity="0.9"/>`;
+  }).join('');
+  const mark = (v, color) => v == null ? '' :
+    `<line x1="${x(v).toFixed(1)}" x2="${x(v).toFixed(1)}" y1="0" y2="${H}" stroke="${color}" stroke-width="1.2" stroke-dasharray="2 2"/>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="shrink-0" role="img" aria-label="Distribution histogram with mean and median markers">
+    ${bars}${mark(d.mean, '#c98500')}${mark(d.median, '#47c7eb')}</svg>`;
+}
+
+function sparkBox(b) {
+  const W = 280, H = 60, cy = H / 2;
+  const span = (b.max - b.min) || 1;
+  const x = v => ((v - b.min) / span) * (W - 10) + 5;
+  const bx1 = x(b.q1), bx2 = x(b.q3), wl = x(b.whisk_lo), wh = x(b.whisk_hi);
+  const boxH = 28, boxY = cy - boxH / 2;
+  // whisker stems + caps, IQR box, median line
+  let svg = `
+    <line x1="${wl.toFixed(1)}" x2="${bx1.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${bx2.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wl.toFixed(1)}" x2="${wl.toFixed(1)}" y1="${cy - 8}" y2="${cy + 8}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wh.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy - 8}" y2="${cy + 8}" stroke="#adbceb" stroke-width="1"/>
+    <rect x="${bx1.toFixed(1)}" y="${boxY}" width="${Math.max(bx2 - bx1, 1.5).toFixed(1)}" height="${boxH}" fill="#3987e5" fill-opacity="0.35" stroke="#3987e5" stroke-width="1" rx="1.5"/>
+    <line x1="${x(b.median).toFixed(1)}" x2="${x(b.median).toFixed(1)}" y1="${boxY}" y2="${boxY + boxH}" stroke="#47c7eb" stroke-width="1.6"/>`;
+  // outlier points, tiny vertical jitter so stacked values stay visible
+  svg += (b.points ?? []).map((v, i) =>
+    `<circle cx="${x(v).toFixed(1)}" cy="${(cy + ((i % 3) - 1) * 8).toFixed(1)}" r="2.5" fill="#e66767" fill-opacity="0.85"/>`
+  ).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="shrink-0" role="img" aria-label="Box plot with outlier points">${svg}</svg>`;
+}
+
+/* Shortcut: jump to Wrangle tab with operation pre-filled (+ suggested method) */
+function prefillWrangle(opType, col, suggest = '') {
   switchTab('wrangle');
   document.getElementById('op-type').value = opType;
   if (col) document.getElementById('op-column').value = col;
   renderOpParams();
+  if (suggest) {
+    if (opType === 'fill_missing') {
+      const sel = document.getElementById('p-fill-method');
+      if (sel) { sel.value = suggest; toggleCustomFill(); }
+    } else if (opType === 'handle_outliers') {
+      const sel = document.getElementById('p-outlier-method');
+      if (sel) sel.value = suggest;
+    }
+  }
 }
 
 /* ── Wrangle tab ────────────────────────────────────────────────────────── */
@@ -617,9 +828,11 @@ async function applyOperation() {
     if (data.ok) {
       applyState(data);
       const label = opType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      resultEl.textContent = `Applied: ${label}`;
-      resultEl.className = 'text-xs text-green-400';
-      toast(`${label}${col ? ' on ' + col : ''} applied`, 'success');
+      const detail = [];
+      if (data.rows_removed > 0)  detail.push(`${data.rows_removed.toLocaleString()} rows removed`);
+      if (data.cells_changed > 0) detail.push(`${data.cells_changed.toLocaleString()} cells changed`);
+      resultEl.textContent = '';
+      toast(`${label}${col ? ' on ' + col : ''} applied${detail.length ? ' — ' + detail.join(', ') : ''}`, 'success');
       updateLogBadge();
     } else {
       resultEl.textContent = 'Error: ' + data.error;
@@ -689,7 +902,7 @@ function populateVizSelects() {
 function updateVizControls() {
   const type      = document.getElementById('viz-type').value;
   const needsCol  = ['histogram','bar','scatter','box','line','pie'].includes(type);
-  const needsCol2 = ['scatter','box','line'].includes(type); // box: group-by, line: x-axis
+  const needsCol2 = ['scatter','box','line','bar'].includes(type); // box: group-by, line: x-axis, bar: aggregate value
   document.getElementById('viz-col').classList.toggle('hidden', !needsCol);
   document.getElementById('viz-col2').classList.toggle('hidden', !needsCol2);
 }
@@ -723,12 +936,65 @@ function renderCharts(charts) {
     gallery.innerHTML = `<div class="col-span-2 text-center text-prussian-500 py-16 text-sm">No charts generated — select a column and chart type, then click Generate.</div>`;
     return;
   }
+  S.lastCharts = charts;
   gallery.innerHTML = charts.map((c, i) =>
-    `<div class="chart-card" style="--i:${Math.min(i, 8)}">
-      <h4>${esc(c.title ?? c.type)}</h4>
-      <img src="data:image/png;base64,${c.data}" alt="${esc(c.title ?? '')}" loading="lazy" />
+    `<div class="chart-card ${charts.length === 1 ? 'chart-card-wide' : ''}" style="--i:${Math.min(i, 8)}">
+      <h4>
+        <span class="truncate">${esc(c.title ?? c.type)}</span>
+        ${c.data ? `<button class="op-btn chart-dl" onclick="downloadChart(${i})" title="Download this chart as a JPG image" aria-label="Download ${esc(c.title ?? 'chart')} as JPG">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          JPG</button>` : ''}
+      </h4>
+      ${c.message
+        ? `<p class="p-4 text-xs text-prussian-300 leading-relaxed">${esc(c.message)}</p>`
+        : `<img src="data:image/png;base64,${c.data}" alt="${esc(c.title ?? '')}" loading="lazy" />`}
     </div>`
   ).join('');
+}
+
+function downloadChart(i) {
+  const c = S.lastCharts?.[i];
+  if (!c?.data) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0a1129';           // JPG has no alpha — paint the chart surface first
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const a = Object.assign(document.createElement('a'), {
+      href: canvas.toDataURL('image/jpeg', 0.95),
+      download: `${(c.title ?? 'chart').trim().replace(/[^\w-]+/g, '_')}.jpg`,
+    });
+    a.click();
+  };
+  img.src = 'data:image/png;base64,' + c.data;
+}
+
+/* ── Close dataset: back to upload screen ───────────────────────────────── */
+function closeDataset() {
+  if (S.opLog.length &&
+      !confirm('Close this dataset? Applied operations will be discarded — Export CSV first if you want to keep the cleaned data.')) {
+    return;
+  }
+  document.getElementById('workspace').style.display   = 'none';
+  document.getElementById('top-actions').style.display = 'none';
+  document.getElementById('upload-screen').style.display = '';
+  document.getElementById('file-label').textContent = 'No file loaded';
+  document.getElementById('file-input').value = '';   // allow re-uploading the same file
+
+  Object.assign(S, {
+    columns: [], dtypes: {}, stats: {}, quality: {}, opLog: [],
+    selectedCol: null, currentPage: 0, totalRows: 0,
+  });
+  document.getElementById('column-list').innerHTML = '';
+  document.getElementById('chart-gallery').innerHTML = '';
+  showUploadError('');
+  const apiStatus = document.getElementById('api-status');
+  apiStatus.classList.add('hidden');
+  apiStatus.className = 'text-prussian-400 text-xs mt-2 hidden';
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -786,8 +1052,13 @@ function initUI() {
   dz.addEventListener('dragleave', () => dz.classList.remove('drop-zone-active'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drop-zone-active'); handleUpload(e.dataTransfer.files[0]); });
 
+  document.getElementById('btn-api-load').addEventListener('click', loadFromApi);
+  document.getElementById('api-source').addEventListener('change', updateApiControls);
+  document.getElementById('api-id').addEventListener('keydown', e => { if (e.key === 'Enter') loadFromApi(); });
+
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
+  document.getElementById('btn-close').addEventListener('click', closeDataset);
   document.getElementById('btn-reset').addEventListener('click', resetDataset);
   document.getElementById('btn-download').addEventListener('click', exportCSV);
   document.getElementById('prev-page').addEventListener('click', () => { if (S.currentPage > 0) loadPage(S.currentPage - 1); });
