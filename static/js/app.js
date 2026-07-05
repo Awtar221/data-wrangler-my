@@ -1128,8 +1128,30 @@ function iconCode() { return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="non
 function iconWarn() { return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`; }
 function iconEdit() { return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`; }
 
+/* ── Font scale ─────────────────────────────────────────────────────────── */
+const BASE_ZOOM = 1.2;   // rendered zoom at the "100%" slider position
+
+function applyFontScale(v) {
+  v = Math.min(125, Math.max(100, v));   // displayed %; 100% floor (= 1.2 actual zoom)
+  const zoom = (v / 100) * BASE_ZOOM;
+  document.body.style.zoom = zoom;
+  // vh-based heights render zoom× too large; --app-zoom divides them back so
+  // the app shell always fits the real viewport (fixes clipped bottom/legend)
+  document.documentElement.style.setProperty('--app-zoom', zoom);
+  document.querySelectorAll('.font-slider').forEach(s => {
+    s.value = v;
+    s.setAttribute('aria-valuetext', `${v}%`);
+    s.title = `Text size: ${v}%`;
+  });
+  try { localStorage.setItem('mdw-font-scale2', v); } catch {}
+}
+
 /* ── Init ───────────────────────────────────────────────────────────────── */
 function initUI() {
+  const savedScale = parseInt(localStorage.getItem('mdw-font-scale2'), 10);
+  applyFontScale(Number.isFinite(savedScale) ? savedScale : 100);   // 100% shown = 1.2 zoom
+  document.querySelectorAll('.font-slider').forEach(s =>
+    s.addEventListener('input', e => applyFontScale(+e.target.value)));
   const dz = document.getElementById('drop-zone');
   document.getElementById('file-input').addEventListener('change', e => handleUpload(e.target.files[0]));
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drop-zone-active'); });

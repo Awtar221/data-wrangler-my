@@ -418,6 +418,19 @@
 .stat-label { color: var(--faint); }
 .stat-value { color: var(--text); font-family: 'JetBrains Mono', monospace; text-align: right; }
 
+/* ── Font size slider ──────────────────────────────────────── */
+.font-slider {
+  width: 72px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.font-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 /* ── Confirm dialog ────────────────────────────────────────── */
 .confirm-dialog {
   background: var(--surface);
