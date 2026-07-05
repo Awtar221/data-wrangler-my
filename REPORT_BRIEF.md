@@ -25,7 +25,7 @@ Messy CSVs (missing values, duplicates, wrong types, outliers, inconsistent form
 ## Design decisions worth citing
 - **Transparency**: nothing auto-applies; one click = one logged, undoable change.
 - **Chart palette**: 8 categorical hues validated for colour-vision-deficiency separation, lightness band, chroma floor, ≥3:1 contrast on the dark chart surface. Single nominal series = single hue (no rainbow bars).
-- **Accessibility**: WCAG AA contrast, keyboard navigation, ARIA labels, reduced-motion support.
+- **Accessibility**: WCAG AA contrast, keyboard navigation, ARIA labels, reduced-motion support, interface text-size slider (base 120% zoom, scalable to 150%) with viewport-fit compensation.
 - Dark "tool-grade" UI (prussian blue palette), density-first layout.
 
 ## Originality angle (10-mark rubric row)
