@@ -10,6 +10,7 @@ const S = {
   currentPage: 0,
   totalRows:   0,
   pageSize:    100,
+  ignored:     new Set(),   // quality findings the user chose to ignore ("section:col")
 };
 
 /* ── Boot: load Pyodide + packages + Python modules ────────────────────── */
@@ -169,6 +170,7 @@ function applyState(data) {
 
 /* ── Workspace transition ───────────────────────────────────────────────── */
 function enterWorkspace(filename) {
+  S.ignored = new Set();
   document.getElementById('upload-screen').style.display = 'none';
   document.getElementById('workspace').style.display = 'flex';
   document.getElementById('top-actions').style.display = 'flex';
@@ -248,20 +250,26 @@ function renderTable(preview) {
     `Page ${page + 1} / ${Math.ceil(total_rows / page_size)}`;
 
   const outlierCols = new Set(Object.keys(S.quality.outliers ?? {}));
+  const changedByCol = {};
+  for (const [c, positions] of Object.entries(preview.changed_cells ?? {})) {
+    changedByCol[c] = new Set(positions);
+  }
 
   document.getElementById('table-head').innerHTML =
     `<tr>${columns.map(c =>
       `<th class="${c === S.selectedCol ? 'col-selected' : ''}" onclick="selectCol('${esc(c)}')">${esc(c)}</th>`
     ).join('')}</tr>`;
 
-  document.getElementById('table-body').innerHTML = data.map(row =>
+  document.getElementById('table-body').innerHTML = data.map((row, ri) =>
     `<tr>${columns.map(c => {
-      const val    = row[c];
-      const isNull = val === null || val === undefined;
-      const isOut  = !isNull && outlierCols.has(c);
-      const colSel = c === S.selectedCol ? 'col-selected' : '';
-      const cls    = [colSel, isNull ? 'null-cell' : isOut ? 'outlier-cell' : ''].filter(Boolean).join(' ');
-      return `<td class="${cls}" title="${esc(String(val ?? ''))}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
+      const val     = row[c];
+      const isNull  = val === null || val === undefined;
+      const isOut   = !isNull && outlierCols.has(c);
+      const changed = changedByCol[c]?.has(ri);
+      const colSel  = c === S.selectedCol ? 'col-selected' : '';
+      const cls     = [colSel, changed ? 'changed-cell' : '', isNull ? 'null-cell' : isOut ? 'outlier-cell' : ''].filter(Boolean).join(' ');
+      const tip     = changed ? 'Changed by the last operation' : esc(String(val ?? ''));
+      return `<td class="${cls}" title="${tip}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
     }).join('')}</tr>`
   ).join('');
 }
@@ -310,14 +318,40 @@ function switchTab(name) {
 }
 
 /* ── Quality Report ─────────────────────────────────────────────────────── */
+function notIgnored(section) {
+  return ([col]) => !S.ignored.has(`${section}:${col}`);
+}
+
+function ignoreFinding(section, col) {
+  S.ignored.add(`${section}:${col}`);
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function restoreFinding(key) {
+  S.ignored.delete(key);
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function restoreAllIgnored() {
+  S.ignored.clear();
+  renderQualityReport();
+  updateQualityBadge();
+}
+
+function ignoreBtn(section, col) {
+  return `<button class="op-btn ml-1" onclick="ignoreFinding('${section}','${esc(col)}')" title="Hide this finding from the report">Ignore</button>`;
+}
+
 function updateQualityBadge() {
   const qr = S.quality;
-  const n  = Object.keys(qr.missing ?? {}).length
-    + ((qr.duplicates ?? 0) > 0 ? 1 : 0)
-    + Object.keys(qr.type_issues ?? {}).length
-    + Object.keys(qr.outliers ?? {}).length
-    + Object.keys(qr.inconsistent_formats ?? {}).length
-    + Object.keys(qr.typo_candidates ?? {}).length;
+  const n  = Object.entries(qr.missing ?? {}).filter(notIgnored('missing')).length
+    + ((qr.duplicates ?? 0) > 0 && !S.ignored.has('duplicates:*') ? 1 : 0)
+    + Object.entries(qr.type_issues ?? {}).filter(notIgnored('type_issues')).length
+    + Object.entries(qr.outliers ?? {}).filter(notIgnored('outliers')).length
+    + Object.entries(qr.inconsistent_formats ?? {}).filter(notIgnored('inconsistent_formats')).length
+    + Object.entries(qr.typo_candidates ?? {}).filter(notIgnored('typo_candidates')).length;
   const b = document.getElementById('quality-badge');
   b.textContent = n;
   b.classList.toggle('hidden', n === 0);
@@ -334,9 +368,10 @@ function renderQualityReport() {
   </div>`;
 
   /* Missing */
-  if (Object.keys(qr.missing ?? {}).length) {
+  const missingRows = Object.entries(qr.missing ?? {}).filter(notIgnored('missing'));
+  if (missingRows.length) {
     html += aSection('Missing Values', '#f59e0b', iconInfo(),
-      Object.entries(qr.missing).map(([col, i]) =>
+      missingRows.map(([col, i]) =>
         `<div class="anomaly-row flex-col items-stretch gap-1.5">
           <div class="flex items-center gap-2 w-full">
             ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
@@ -344,37 +379,42 @@ function renderQualityReport() {
             <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
             <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}','${i.recommend?.method ?? ''}')">
               Fix${i.recommend ? ' with ' + esc(i.recommend.label) : ''}</button>
+            ${ignoreBtn('missing', col)}
           </div>
           ${recommendRow(i)}
         </div>`).join(''));
   }
 
   /* Duplicates */
-  if ((qr.duplicates ?? 0) > 0) {
+  if ((qr.duplicates ?? 0) > 0 && !S.ignored.has('duplicates:*')) {
     html += aSection('Duplicate Rows', '#ef4444', iconCopy(),
       `<div class="anomaly-row">
         ${pill('MED','sev-medium')}
         <span class="text-prussian-200 flex-1">${qr.duplicates.toLocaleString()} exact duplicate rows</span>
         <button class="op-btn" onclick="prefillWrangle('remove_duplicates',null)">Fix</button>
+        ${ignoreBtn('duplicates', '*')}
       </div>`);
   }
 
   /* Type issues */
-  if (Object.keys(qr.type_issues ?? {}).length) {
+  const typeRows = Object.entries(qr.type_issues ?? {}).filter(notIgnored('type_issues'));
+  if (typeRows.length) {
     html += aSection('Incorrect Data Types', '#0684f9', iconCode(),
-      Object.entries(qr.type_issues).map(([col, i]) =>
+      typeRows.map(([col, i]) =>
         `<div class="anomaly-row">
           ${pill('TYPE','sev-medium')}
           ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[11px]">${i.current} → ${i.suggested} (${i.convertible_pct}% convertible)</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('convert_type','${esc(col)}')">Fix</button>
+          ${ignoreBtn('type_issues', col)}
         </div>`).join(''));
   }
 
   /* Outliers */
-  if (Object.keys(qr.outliers ?? {}).length) {
+  const outlierRows = Object.entries(qr.outliers ?? {}).filter(notIgnored('outliers'));
+  if (outlierRows.length) {
     html += aSection('Outliers', '#f59e0b', iconWarn(),
-      Object.entries(qr.outliers).map(([col, i]) =>
+      outlierRows.map(([col, i]) =>
         `<div class="anomaly-row flex-col items-stretch gap-1.5">
           <div class="flex items-center gap-2 w-full">
             ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
@@ -382,15 +422,17 @@ function renderQualityReport() {
             <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
             <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}','${i.recommend?.method ?? ''}')">
               Fix with ${esc(i.recommend?.label ?? '')}</button>
+            ${ignoreBtn('outliers', col)}
           </div>
           ${recommendRow(i, i.lower_bound, i.upper_bound)}
         </div>`).join(''));
   }
 
   /* Inconsistent formats */
-  if (Object.keys(qr.inconsistent_formats ?? {}).length) {
+  const fmtRows = Object.entries(qr.inconsistent_formats ?? {}).filter(notIgnored('inconsistent_formats'));
+  if (fmtRows.length) {
     html += aSection('Inconsistent Formats', '#adbceb', iconEdit(),
-      Object.entries(qr.inconsistent_formats).map(([col, i]) => {
+      fmtRows.map(([col, i]) => {
         const detail = i.type === 'date_format'
           ? Object.entries(i.formats).map(([f, c]) => `${f}:${c}`).join(' | ')
           : `lower:${i.lower} upper:${i.upper} title:${i.title} mixed:${i.mixed}`;
@@ -400,19 +442,22 @@ function renderQualityReport() {
           ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[10px]">${esc(detail)}</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('${op}','${esc(col)}')">Fix</button>
+          ${ignoreBtn('inconsistent_formats', col)}
         </div>`;
       }).join(''));
   }
 
   /* Typos */
-  if (Object.keys(qr.typo_candidates ?? {}).length) {
+  const typoRows = Object.entries(qr.typo_candidates ?? {}).filter(notIgnored('typo_candidates'));
+  if (typoRows.length) {
     html += aSection('Spelling / Typo Candidates', '#adbceb', iconEdit(),
-      Object.entries(qr.typo_candidates).map(([col, mapping]) =>
+      typoRows.map(([col, mapping]) =>
         `<div class="anomaly-row flex-col items-start gap-2">
           <div class="flex items-center gap-2 w-full">
             ${pill('TYPO','sev-low')}
             ${colLink(col)}
             <button class="op-btn ml-auto" onclick="prefillWrangle('fix_typos','${esc(col)}')">Fix</button>
+            ${ignoreBtn('typo_candidates', col)}
           </div>
           <div class="text-[10px] text-prussian-400 pl-10 space-y-0.5">
             ${Object.entries(mapping).slice(0, 5).map(([k, v]) =>
@@ -424,8 +469,27 @@ function renderQualityReport() {
 
   if (!html.includes('anomaly-row')) {
     html += `<div class="quality-card text-center py-8">
-      <p class="text-green-400 font-medium mb-1">No anomalies detected</p>
-      <p class="text-prussian-400 text-xs">Dataset looks clean.</p>
+      <p class="text-green-400 font-medium mb-1">No anomalies ${S.ignored.size ? 'shown' : 'detected'}</p>
+      <p class="text-prussian-400 text-xs">${S.ignored.size ? 'All remaining findings are ignored (see below).' : 'Dataset looks clean.'}</p>
+    </div>`;
+  }
+
+  /* Ignored findings */
+  if (S.ignored.size) {
+    const names = { missing: 'Missing values', duplicates: 'Duplicate rows', type_issues: 'Data type',
+                    outliers: 'Outliers', inconsistent_formats: 'Format', typo_candidates: 'Typos' };
+    html += `<div class="quality-card">
+      <h3 class="text-prussian-400">Ignored findings (${S.ignored.size})</h3>
+      <div class="space-y-0.5">
+        ${[...S.ignored].map(key => {
+          const [section, col] = key.split(/:(.*)/s);
+          return `<div class="anomaly-row">
+            <span class="text-prussian-400 text-[11px] flex-1">${names[section] ?? section}${col !== '*' ? ' — ' : ''}${col !== '*' ? `<span class="log-col">${esc(col)}</span>` : ''}</span>
+            <button class="op-btn" onclick="restoreFinding('${esc(key)}')">Restore</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <button class="op-btn mt-2" onclick="restoreAllIgnored()">Restore all</button>
     </div>`;
   }
 
@@ -764,9 +828,11 @@ async function applyOperation() {
     if (data.ok) {
       applyState(data);
       const label = opType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      resultEl.textContent = `Applied: ${label}`;
-      resultEl.className = 'text-xs text-green-400';
-      toast(`${label}${col ? ' on ' + col : ''} applied`, 'success');
+      const detail = [];
+      if (data.rows_removed > 0)  detail.push(`${data.rows_removed.toLocaleString()} rows removed`);
+      if (data.cells_changed > 0) detail.push(`${data.cells_changed.toLocaleString()} cells changed`);
+      resultEl.textContent = '';
+      toast(`${label}${col ? ' on ' + col : ''} applied${detail.length ? ' — ' + detail.join(', ') : ''}`, 'success');
       updateLogBadge();
     } else {
       resultEl.textContent = 'Error: ' + data.error;

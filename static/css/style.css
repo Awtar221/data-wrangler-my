@@ -201,6 +201,21 @@
 .data-table td.null-cell { color: var(--faint); font-style: italic; }
 .data-table td.outlier-cell { color: #f59e0b; }
 .data-table td.col-selected { background: rgba(25,185,230,0.05); }
+.legend-swatch {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.data-table td.changed-cell {
+  background: rgba(25,185,230,0.14);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
 
 /* ── Form Controls ─────────────────────────────────────────── */
 .select-field, .input-field {

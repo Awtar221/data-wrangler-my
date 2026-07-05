@@ -15,6 +15,25 @@ from difflib import get_close_matches
 _df = None
 _original_df = None
 _op_log = []
+_changed = {}     # col -> set of row index labels changed by the last operation
+
+
+def _diff_changed(before, after):
+    """Cell-level diff between two frames, over surviving rows/columns."""
+    changed = {}
+    common_idx = after.index.intersection(before.index)
+    common_cols = [c for c in after.columns if c in before.columns]
+    a, b = after.loc[common_idx], before.loc[common_idx]
+    for c in common_cols:
+        av, bv = a[c], b[c]
+        try:
+            m = av.ne(bv) & ~(av.isna() & bv.isna())
+        except Exception:
+            m = av.astype(str) != bv.astype(str)
+        labels = av.index[m]
+        if len(labels):
+            changed[str(c)] = set(labels)
+    return changed
 
 
 def _clean(o):
@@ -37,23 +56,25 @@ def _dump(obj):
 # ── Load ──────────────────────────────────────────────────────────────────────
 
 def load_csv(csv_text):
-    global _df, _original_df, _op_log
+    global _df, _original_df, _op_log, _changed
     _df = pd.read_csv(io.StringIO(csv_text))
     _original_df = _df.copy()
     _op_log = []
+    _changed = {}
     return _dump(_build_state())
 
 
 def load_records(json_text):
     """Load a list of JSON records (e.g. from the data.gov.my API).
     Nested objects are flattened to dotted column names via json_normalize."""
-    global _df, _original_df, _op_log
+    global _df, _original_df, _op_log, _changed
     records = json.loads(json_text)
     if isinstance(records, dict):
         records = records.get('data', [records])
     _df = pd.json_normalize(records)
     _original_df = _df.copy()
     _op_log = []
+    _changed = {}
     return _dump(_build_state())
 
 
@@ -82,7 +103,16 @@ def _preview(page=0, page_size=100):
     # astype(object) first — .where(..., None) on numeric columns silently
     # reinserts NaN, which json.dumps emits as invalid bare NaN
     safe = chunk.astype(object).where(pd.notnull(chunk), None)
+    # positions (within this page) of cells changed by the last operation
+    changed_cells = {}
+    if _changed:
+        for c, labels in _changed.items():
+            if c in chunk.columns:
+                pos = [i for i, lbl in enumerate(chunk.index) if lbl in labels]
+                if pos:
+                    changed_cells[c] = pos
     return {
+        'changed_cells': changed_cells,
         'columns': list(_df.columns),
         'dtypes': {c: str(_df[c].dtype) for c in _df.columns},
         'data': safe.to_dict(orient='records'),
@@ -318,14 +348,19 @@ def _quality_report():
 # ── Apply single operation ────────────────────────────────────────────────────
 
 def apply_operation(op_type, column, params_json):
-    global _df
+    global _df, _changed
     params = json.loads(params_json) if params_json else {}
     col = column if column else None
 
+    before = _df.copy()
     try:
         _apply(op_type, col, params)
         _op_log.append({'type': op_type, 'column': col, 'params': params})
-        return _dump({'ok': True, **_build_state()})
+        _changed = _diff_changed(before, _df)
+        return _dump({'ok': True,
+                      'rows_removed': len(before) - len(_df),
+                      'cells_changed': sum(len(v) for v in _changed.values()),
+                      **_build_state()})
     except Exception as e:
         return _dump({'ok': False, 'error': str(e), **_build_state()})
 
@@ -441,7 +476,7 @@ def undo_operation(index):
     """Undo one logged operation by replaying the rest from the original data.
     Later ops that fail after removal (e.g. depend on an undone rename) are
     dropped from the log and reported in 'failed'."""
-    global _df, _op_log
+    global _df, _op_log, _changed
     idx = int(index)
     if idx < 0 or idx >= len(_op_log):
         return _dump({'ok': False, 'error': 'Invalid operation index', **_build_state()})
@@ -449,6 +484,7 @@ def undo_operation(index):
     remaining = [op for i, op in enumerate(_op_log) if i != idx]
     _df = _original_df.copy()
     _op_log = []
+    _changed = {}
     failed = []
     for op in remaining:
         try:
@@ -460,9 +496,10 @@ def undo_operation(index):
 
 
 def reset():
-    global _df, _op_log
+    global _df, _op_log, _changed
     _df = _original_df.copy()
     _op_log = []
+    _changed = {}
     return _dump(_build_state())
 
 
