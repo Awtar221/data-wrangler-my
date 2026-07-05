@@ -9,17 +9,17 @@ Browser-only CSV cleaning + visualisation tool. Python (pandas, NumPy, Matplotli
 Messy CSVs (missing values, duplicates, wrong types, outliers, inconsistent formats, typos) distort analysis. Existing fixes need coding skill (pandas/R) or installed software (Tableau Prep/Power BI) and often upload data to third parties. MyDataWrangler.my removes all three barriers: no code, no install, no data upload.
 
 ## Objectives (mirror the CLOs)
-1. Ensure data quality/reliability: detect 6 anomaly types, fix with 14 manual operations, all logged + undoable.
+1. Ensure data quality/reliability: detect 6 anomaly types, fix with 15 manual operations, all logged + undoable.
 2. Effective visualisation via design principles: 8 chart types, colour-blind-validated palette, WCAG contrast.
 3. Apply processing/visualisation tools practically: point-and-click pandas + Matplotlib for non-programmers.
 
 ## Method / pipeline (7 steps)
 1. **Boot**: browser downloads Pyodide runtime (~30–60 MB, cached after first load).
-2. **Load**: CSV upload, or live fetch from data.gov.my open data API (Data Catalogue / OpenDOSM / Weather endpoints; JSON records → json_normalize → DataFrame, nested fields auto-flattened); original copy kept.
+2. **Load**: primary path = live fetch from data.gov.my open data API (Data Catalogue / OpenDOSM / Weather endpoints; JSON records → json_normalize → DataFrame, nested fields auto-flattened); secondary = CSV upload. Original copy kept.
 3. **Detect** (automatic quality report): missing = null %, duplicates = exact match, type issues = ≥70% parseable as numeric/datetime, outliers = IQR (Q1−1.5×IQR, Q3+1.5×IQR), format issues = date-pattern + casing analysis, typos = difflib fuzzy match (cutoff 0.85). Findings ranked by severity; "Fix" buttons pre-fill operations but never auto-apply. Missing/outlier findings additionally show inline mini charts (distribution histogram with mean+median markers; box plot with outlier dots) and a rule-based recommendation with stated reasoning: |skew| ≤ 0.5 → mean fill, skewed → median, categorical → mode; outliers >5% or heavy skew → cap (Winsorize), else remove.
-4. **Wrangle**: 14 explicit ops — fill missing (mean/median/mode/ffill/bfill/zero/custom), drop missing rows, remove duplicates, convert type, handle outliers (cap/remove/nullify/z-score), standardise case, standardise dates, trim whitespace, fix typos, find & replace, filter rows, drop column, rename column.
-5. **Audit**: operation log; any single op undoable (replays the rest from original data).
-6. **Visualise**: histogram, bar (optional second numeric column → mean per category), scatter (+trend line, r), box (+group-by, red outlier dots), line, correlation heatmap, pie, auto-overview. Matplotlib renders PNG in-browser; every chart downloadable as JPG.
+4. **Wrangle**: 15 explicit ops — fill missing (mean/median/mode/ffill/bfill/zero/custom), drop missing rows, remove duplicates, convert type, split date into parts (year/quarter/month/month name/day/weekday/hour → new columns), handle outliers (cap/remove/nullify/z-score), standardise case, standardise dates, trim whitespace, fix typos, find & replace, filter rows, drop column, rename column. Date parsing tolerates mixed formats per column (pandas format='mixed'). After each Apply, Data Preview highlights exactly which cells changed (cell-level before/after diff) and reports rows-removed/cells-changed counts; colour legends explain all cell/dot cues.
+5. **Audit**: operation log (embedded in Wrangle tab); any single op undoable (replays the rest from original data). Quality findings can be ignored/restored without touching data.
+6. **Visualise**: consistent convention first selector = X, second = Y, and pickers only list type-suitable columns (categories incl. ≤20-unique numerics for bar/pie/box-group X). Histogram, bar (optional numeric Y → mean per category), scatter (+trend line, r), box (+group-by, red outlier dots), line, correlation heatmap, pie (optional numeric Y → share of its total per category, e.g. % of arrests by sex), auto-overview. Matplotlib renders PNG in-browser; every chart downloadable as JPG; undrawable charts explain why (e.g. heatmap needs ≥2 numeric columns).
 7. **Export**: cleaned CSV downloads directly from browser.
 
 ## Design decisions worth citing

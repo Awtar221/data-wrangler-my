@@ -14,7 +14,7 @@ Real-world datasets are rarely analysis-ready. Missing values, duplicate records
 
 ## 2. Objectives
 
-1. **Ensure data quality and reliability** — automatically detect six categories of anomaly (missing values, duplicates, type mismatches, outliers, inconsistent formats, spelling errors), recommend statistically appropriate fixes with visual evidence (distribution sparklines, box plots), and provide 14 manual cleaning operations, with every step logged, undoable, and reversible.
+1. **Ensure data quality and reliability** — automatically detect six categories of anomaly (missing values, duplicates, type mismatches, outliers, inconsistent formats, spelling errors), recommend statistically appropriate fixes with visual evidence (distribution sparklines, box plots), and provide 15 manual cleaning operations, with every step logged, undoable, and reversible.
 2. **Create effective visualisations by applying design principles** — eight chart types rendered with a colour-blind-validated categorical palette, WCAG-checked contrast against the dark theme, recessive gridlines, and single-hue encoding for nominal series.
 3. **Apply data processing and visualisation tools in a practical scenario** — deliver pandas/NumPy processing and Matplotlib/Seaborn charting through an approachable point-and-click interface usable by non-programmers.
 4. **Guarantee transparency and trust** — nothing is applied automatically; every operation is user-initiated, recorded in an operation log, individually undoable, and the original dataset is always recoverable via Reset.
@@ -48,7 +48,7 @@ There is no backend. The "server" is a static file host and can be replaced by G
 ```
 
 1. **Boot** — the page downloads the Pyodide runtime and Python packages (~30–60 MB, cached by the browser afterwards), then loads the app's two Python modules.
-2. **Load data** — either drop a CSV file, or fetch a dataset directly from **data.gov.my** (Malaysia's official open data portal) via its Data Catalogue, OpenDOSM, or Weather APIs — enter a dataset ID (e.g. `fuelprice`) and the records load straight into a pandas DataFrame (nested fields are auto-flattened). A copy of the original is kept for Reset/Undo.
+2. **Load data** — the primary path fetches a dataset directly from **data.gov.my** (Malaysia's official open data portal) via its Data Catalogue, OpenDOSM, or Weather APIs: enter a dataset ID (e.g. `fuelprice`) and the records load straight into a pandas DataFrame (nested fields auto-flattened). Alternatively, drop your own CSV file. A copy of the original is kept for Reset/Undo.
 3. **Detect** — a quality report runs automatically over the whole dataset:
 
    | Anomaly | Detection method |
@@ -65,11 +65,11 @@ There is no backend. The "server" is a static file host and can be replaced by G
    - a **rule-based recommendation** with its reasoning, derived from the column's skewness and outlier share (e.g. right-skewed → fill with median, not mean; >5% outliers → cap rather than delete);
    - a **Fix with …** button that jumps to Wrangle with the column, operation, *and recommended method* pre-selected — but never applies anything automatically.
 
-   Column names throughout the report are clickable and navigate to that column in the Data Preview table.
-4. **Wrangle** — the user picks one of 14 explicit operations (fill/drop missing, remove duplicates, convert types, cap/remove/nullify outliers, standardise case and dates, fix typos, find & replace, filter rows, drop/rename columns), configures it, and clicks Apply. State updates flow back to the UI as JSON.
-5. **Audit** — every applied operation appears in the Op Log with its parameters. Any single operation can be undone: the app replays the remaining operations from the original data, so history stays consistent.
-6. **Visualise** — eight chart types (histogram, bar, scatter with trend line and correlation coefficient, box plot with group-by, line, correlation heatmap, pie, and an automatic overview). The bar chart accepts an optional second numeric column to plot the mean per category instead of raw counts; charts that cannot be drawn (e.g. a heatmap on fewer than two numeric columns) explain why and what to do instead of failing silently. Charts are rendered by Matplotlib inside the browser, styled with a validated dark-theme palette, and each one can be **downloaded as a JPG** from its card.
-7. **Export** — the cleaned dataset downloads as CSV directly from the browser; no server round-trip. **Close** returns to the upload screen (with a warning if unexported operations would be discarded) to start on a fresh dataset.
+   Column names throughout the report are clickable and navigate to that column in the Data Preview table, and any finding can be **ignored** (and later restored) to keep the report focused on what matters.
+4. **Wrangle** — the user picks one of 15 explicit operations (fill/drop missing, remove duplicates, convert types, split a date column into parts such as year/month/weekday, cap/remove/nullify outliers, standardise case and dates, fix typos, find & replace, filter rows, drop/rename columns), configures it, and clicks Apply. Date parsing is tolerant of mixed formats within one column. After each Apply, the Data Preview **highlights exactly which cells changed**, and the toast reports the cell/row counts; legends in the preview and column browser explain every colour cue.
+5. **Audit** — every applied operation appears in the Operation Log (shown directly inside the Wrangle tab) with its parameters. Any single operation can be undone: the app replays the remaining operations from the original data, so history stays consistent.
+6. **Visualise** — eight chart types (histogram, bar, scatter with trend line and correlation coefficient, box plot with group-by, line, correlation heatmap, pie, and an automatic overview). Column pickers follow one convention — **first selector = X axis, second = Y axis** — and only offer columns whose type suits the slot (e.g. bar's X lists categories, including low-cardinality numerics like year). Bar and pie accept an optional numeric Y to aggregate (mean per category / share of total — e.g. % of drug arrests by sex); charts that cannot be drawn explain why instead of failing silently. Charts render via Matplotlib in-browser with a validated dark-theme palette, and each can be **downloaded as a JPG** from its card.
+7. **Export** — the cleaned dataset downloads as CSV directly from the browser; no server round-trip. **Close** returns to the upload screen; if unexported operations would be discarded, a confirmation dialog offers **Export CSV & Close** in one step.
 
 ## 5. How to Run
 
@@ -95,7 +95,7 @@ Alternatively, the `templates/` + `static/` files can be hosted on any static we
 - **Colour-blind-safe charting** — the eight-slot categorical palette was validated for CVD (colour-vision-deficiency) separation, lightness band, chroma floor, and ≥3:1 contrast against the chart surface.
 - **One nominal series, one hue** — bar charts do not rainbow-colour a single series; bar length carries the value.
 - **Anomaly as signal, not alarm** — quality issues are ranked by severity and presented analytically, not as red-alert banners.
-- **Accessibility** — WCAG AA contrast targets, controls, ARIA labelling, and `prefers-reduced-motion` support.
+- **Accessibility** — WCAG AA contrast targets, keyboard-navigable controls, ARIA labelling, `prefers-reduced-motion` support, and a **text-size slider** (in the tab bar and on the upload page) that scales the whole interface up to 125% while keeping every panel scrollable.
 
 ## 7. Findings & Conclusion
 
