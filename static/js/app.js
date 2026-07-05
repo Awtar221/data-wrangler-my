@@ -438,7 +438,7 @@ function recommendRow(i, lo = null, hi = null) {
 }
 
 function sparkHist(d, lo = null, hi = null) {
-  const W = 150, H = 34, n = d.bins.length;
+  const W = 280, H = 60, n = d.bins.length;
   const max = Math.max(...d.bins, 1);
   const bw = W / n;
   const span = (d.max - d.min) || 1;
@@ -456,22 +456,22 @@ function sparkHist(d, lo = null, hi = null) {
 }
 
 function sparkBox(b) {
-  const W = 150, H = 34, cy = H / 2;
+  const W = 280, H = 60, cy = H / 2;
   const span = (b.max - b.min) || 1;
-  const x = v => ((v - b.min) / span) * (W - 8) + 4;
+  const x = v => ((v - b.min) / span) * (W - 10) + 5;
   const bx1 = x(b.q1), bx2 = x(b.q3), wl = x(b.whisk_lo), wh = x(b.whisk_hi);
-  const boxH = 16, boxY = cy - boxH / 2;
+  const boxH = 28, boxY = cy - boxH / 2;
   // whisker stems + caps, IQR box, median line
   let svg = `
     <line x1="${wl.toFixed(1)}" x2="${bx1.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
     <line x1="${bx2.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
-    <line x1="${wl.toFixed(1)}" x2="${wl.toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#adbceb" stroke-width="1"/>
-    <line x1="${wh.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wl.toFixed(1)}" x2="${wl.toFixed(1)}" y1="${cy - 8}" y2="${cy + 8}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wh.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy - 8}" y2="${cy + 8}" stroke="#adbceb" stroke-width="1"/>
     <rect x="${bx1.toFixed(1)}" y="${boxY}" width="${Math.max(bx2 - bx1, 1.5).toFixed(1)}" height="${boxH}" fill="#3987e5" fill-opacity="0.35" stroke="#3987e5" stroke-width="1" rx="1.5"/>
     <line x1="${x(b.median).toFixed(1)}" x2="${x(b.median).toFixed(1)}" y1="${boxY}" y2="${boxY + boxH}" stroke="#47c7eb" stroke-width="1.6"/>`;
   // outlier points, tiny vertical jitter so stacked values stay visible
   svg += (b.points ?? []).map((v, i) =>
-    `<circle cx="${x(v).toFixed(1)}" cy="${(cy + ((i % 3) - 1) * 5).toFixed(1)}" r="2" fill="#e66767" fill-opacity="0.85"/>`
+    `<circle cx="${x(v).toFixed(1)}" cy="${(cy + ((i % 3) - 1) * 8).toFixed(1)}" r="2.5" fill="#e66767" fill-opacity="0.85"/>`
   ).join('');
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="shrink-0" role="img" aria-label="Box plot with outlier points">${svg}</svg>`;
 }
