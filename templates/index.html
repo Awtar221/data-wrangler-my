@@ -100,8 +100,8 @@
 
     <div class="text-left bg-prussian-900 border border-prussian-800 rounded-xl p-4">
       <p class="text-prussian-200 text-sm font-medium mb-1">Load from data.gov.my</p>
-      <p class="text-prussian-400 text-xs mb-3">Malaysia's official open data API. Pick a source, enter a dataset ID from the <span class="text-cerulean-400">Data Catalogue</span> page (e.g. <code class="font-mono">fuelprice</code>), and load it straight into the wrangler.</p>
-      <div class="flex flex-wrap gap-2">
+      <p class="text-prussian-400 text-xs mb-3">Malaysia's official open data API. Pick a source, enter a dataset ID from the <a href="https://data.gov.my/data-catalogue" target="_blank" rel="noopener noreferrer" class="text-cerulean-400 hover:underline">Data Catalogue</a> page (e.g. <code class="font-mono">fuelprice</code>), and load it straight into the wrangler.</p>
+      <div class="flex flex-wrap gap-2 justify-center">
         <select id="api-source" class="select-field text-xs" aria-label="API source">
           <option value="data-catalogue">Data Catalogue</option>
           <option value="opendosm">OpenDOSM</option>
@@ -113,7 +113,6 @@
           <option value="fuelprice"></option>
           <option value="cpi_core"></option>
         </datalist>
-        <input id="api-limit" type="number" min="1" step="1" class="input-field text-xs w-24" placeholder="limit" aria-label="Row limit (optional)" />
         <button id="btn-api-load" class="btn-primary text-xs px-4 py-1.5">Load</button>
       </div>
       <p id="api-status" class="text-prussian-400 text-xs mt-2 hidden" aria-live="polite"></p>
@@ -299,6 +298,6 @@
 <div id="toast-container" class="fixed bottom-5 right-5 space-y-2 z-[100]" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-<script src="static/js/app.js?v=13"></script>
+<script src="static/js/app.js?v=14"></script>
 </body>
 </html>

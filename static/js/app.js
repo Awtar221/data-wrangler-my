@@ -107,7 +107,6 @@ function updateApiControls() {
 async function loadFromApi() {
   const source = document.getElementById('api-source').value;
   const id     = document.getElementById('api-id').value.trim();
-  const limit  = document.getElementById('api-limit').value.trim();
   const status = document.getElementById('api-status');
   const btn    = document.getElementById('btn-api-load');
 
@@ -115,7 +114,6 @@ async function loadFromApi() {
 
   const url = new URL(API_BASE + source);
   if (apiNeedsId()) url.searchParams.set('id', id);
-  if (limit) url.searchParams.set('limit', limit);
 
   btn.disabled = true;
   status.classList.remove('hidden');
