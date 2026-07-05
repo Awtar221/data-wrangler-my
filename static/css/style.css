@@ -340,7 +340,11 @@
   box-shadow: 0 4px 16px rgba(7, 12, 29, 0.55);
 }
 .chart-card h4 {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
@@ -348,6 +352,24 @@
   background: var(--surface-2);
 }
 .chart-card img { width: 100%; display: block; }
+
+/* single chart fills the whole gallery row — but stays within one screen */
+.chart-card-wide { grid-column: 1 / -1; }
+.chart-card-wide img {
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 230px);   /* header + tab bar + viz controls + card title */
+  margin: 0 auto;
+}
+
+.chart-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
 
 @keyframes chartIn {
   from { opacity: 0; transform: translateY(6px); }

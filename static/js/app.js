@@ -872,14 +872,41 @@ function renderCharts(charts) {
     gallery.innerHTML = `<div class="col-span-2 text-center text-prussian-500 py-16 text-sm">No charts generated — select a column and chart type, then click Generate.</div>`;
     return;
   }
+  S.lastCharts = charts;
   gallery.innerHTML = charts.map((c, i) =>
-    `<div class="chart-card" style="--i:${Math.min(i, 8)}">
-      <h4>${esc(c.title ?? c.type)}</h4>
+    `<div class="chart-card ${charts.length === 1 ? 'chart-card-wide' : ''}" style="--i:${Math.min(i, 8)}">
+      <h4>
+        <span class="truncate">${esc(c.title ?? c.type)}</span>
+        ${c.data ? `<button class="op-btn chart-dl" onclick="downloadChart(${i})" title="Download this chart as a JPG image" aria-label="Download ${esc(c.title ?? 'chart')} as JPG">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          JPG</button>` : ''}
+      </h4>
       ${c.message
         ? `<p class="p-4 text-xs text-prussian-300 leading-relaxed">${esc(c.message)}</p>`
         : `<img src="data:image/png;base64,${c.data}" alt="${esc(c.title ?? '')}" loading="lazy" />`}
     </div>`
   ).join('');
+}
+
+function downloadChart(i) {
+  const c = S.lastCharts?.[i];
+  if (!c?.data) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0a1129';           // JPG has no alpha — paint the chart surface first
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const a = Object.assign(document.createElement('a'), {
+      href: canvas.toDataURL('image/jpeg', 0.95),
+      download: `${(c.title ?? 'chart').trim().replace(/[^\w-]+/g, '_')}.jpg`,
+    });
+    a.click();
+  };
+  img.src = 'data:image/png;base64,' + c.data;
 }
 
 /* ── Close dataset: back to upload screen ───────────────────────────────── */
