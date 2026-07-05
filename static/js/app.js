@@ -319,11 +319,15 @@ function renderQualityReport() {
   if (Object.keys(qr.missing ?? {}).length) {
     html += aSection('Missing Values', '#f59e0b', iconInfo(),
       Object.entries(qr.missing).map(([col, i]) =>
-        `<div class="anomaly-row">
-          ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
-          <span class="log-col flex-1">${esc(col)}</span>
-          <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
-          <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}')">Fix</button>
+        `<div class="anomaly-row flex-col items-stretch gap-1.5">
+          <div class="flex items-center gap-2 w-full">
+            ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
+            <span class="log-col flex-1">${esc(col)}</span>
+            <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
+            <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}','${i.recommend?.method ?? ''}')">
+              Fix${i.recommend ? ' with ' + esc(i.recommend.label) : ''}</button>
+          </div>
+          ${recommendRow(i)}
         </div>`).join(''));
   }
 
@@ -353,11 +357,15 @@ function renderQualityReport() {
   if (Object.keys(qr.outliers ?? {}).length) {
     html += aSection('Outliers', '#f59e0b', iconWarn(),
       Object.entries(qr.outliers).map(([col, i]) =>
-        `<div class="anomaly-row">
-          ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
-          <span class="log-col flex-1">${esc(col)}</span>
-          <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
-          <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}')">Fix</button>
+        `<div class="anomaly-row flex-col items-stretch gap-1.5">
+          <div class="flex items-center gap-2 w-full">
+            ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
+            <span class="log-col flex-1">${esc(col)}</span>
+            <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
+            <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}','${i.recommend?.method ?? ''}')">
+              Fix with ${esc(i.recommend?.label ?? '')}</button>
+          </div>
+          ${recommendRow(i, i.lower_bound, i.upper_bound)}
         </div>`).join(''));
   }
 
@@ -406,12 +414,83 @@ function renderQualityReport() {
   document.getElementById('quality-content').innerHTML = html;
 }
 
-/* Shortcut: jump to Wrangle tab with operation pre-filled */
-function prefillWrangle(opType, col) {
+/* Recommendation row: sparkline histogram + reason text.
+   lo/hi (IQR bounds) tint out-of-range bins red on outlier rows. */
+function recommendRow(i, lo = null, hi = null) {
+  if (!i.recommend) return '';
+  const spark = i.box ? sparkBox(i.box) : i.dist ? sparkHist(i.dist, lo, hi) : '';
+  const legend = i.box
+    ? `<span class="text-[9px] text-prussian-400 whitespace-nowrap">
+         <span style="color:#3987e5">▬ IQR box</span>&ensp;<span style="color:#47c7eb">┊ median</span>&ensp;<span style="color:#e66767">• outliers</span>
+       </span>`
+    : i.dist
+    ? `<span class="text-[9px] text-prussian-400 whitespace-nowrap">
+         <span style="color:#c98500">┊ mean</span>&ensp;<span style="color:#47c7eb">┊ median</span>
+       </span>`
+    : '';
+  return `<div class="flex items-center gap-3 pl-10">
+    ${spark}${legend}
+    <span class="text-prussian-300 text-[10px] leading-snug flex-1">
+      <span class="text-cerulean-400 font-medium">Suggested: ${esc(i.recommend.label)}.</span>
+      ${esc(i.recommend.reason)}
+    </span>
+  </div>`;
+}
+
+function sparkHist(d, lo = null, hi = null) {
+  const W = 150, H = 34, n = d.bins.length;
+  const max = Math.max(...d.bins, 1);
+  const bw = W / n;
+  const span = (d.max - d.min) || 1;
+  const x = v => Math.min(W, Math.max(0, (v - d.min) / span * W));
+  const bars = d.bins.map((c, i) => {
+    const h = Math.max(c / max * (H - 3), c > 0 ? 1.5 : 0);
+    const binLo = d.min + span * i / n, binHi = d.min + span * (i + 1) / n;
+    const out = (lo != null && binHi <= lo) || (hi != null && binLo >= hi);
+    return `<rect x="${(i * bw + 0.5).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${out ? '#e66767' : '#3987e5'}" opacity="0.9"/>`;
+  }).join('');
+  const mark = (v, color) => v == null ? '' :
+    `<line x1="${x(v).toFixed(1)}" x2="${x(v).toFixed(1)}" y1="0" y2="${H}" stroke="${color}" stroke-width="1.2" stroke-dasharray="2 2"/>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="shrink-0" role="img" aria-label="Distribution histogram with mean and median markers">
+    ${bars}${mark(d.mean, '#c98500')}${mark(d.median, '#47c7eb')}</svg>`;
+}
+
+function sparkBox(b) {
+  const W = 150, H = 34, cy = H / 2;
+  const span = (b.max - b.min) || 1;
+  const x = v => ((v - b.min) / span) * (W - 8) + 4;
+  const bx1 = x(b.q1), bx2 = x(b.q3), wl = x(b.whisk_lo), wh = x(b.whisk_hi);
+  const boxH = 16, boxY = cy - boxH / 2;
+  // whisker stems + caps, IQR box, median line
+  let svg = `
+    <line x1="${wl.toFixed(1)}" x2="${bx1.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${bx2.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy}" y2="${cy}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wl.toFixed(1)}" x2="${wl.toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#adbceb" stroke-width="1"/>
+    <line x1="${wh.toFixed(1)}" x2="${wh.toFixed(1)}" y1="${cy - 5}" y2="${cy + 5}" stroke="#adbceb" stroke-width="1"/>
+    <rect x="${bx1.toFixed(1)}" y="${boxY}" width="${Math.max(bx2 - bx1, 1.5).toFixed(1)}" height="${boxH}" fill="#3987e5" fill-opacity="0.35" stroke="#3987e5" stroke-width="1" rx="1.5"/>
+    <line x1="${x(b.median).toFixed(1)}" x2="${x(b.median).toFixed(1)}" y1="${boxY}" y2="${boxY + boxH}" stroke="#47c7eb" stroke-width="1.6"/>`;
+  // outlier points, tiny vertical jitter so stacked values stay visible
+  svg += (b.points ?? []).map((v, i) =>
+    `<circle cx="${x(v).toFixed(1)}" cy="${(cy + ((i % 3) - 1) * 5).toFixed(1)}" r="2" fill="#e66767" fill-opacity="0.85"/>`
+  ).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="shrink-0" role="img" aria-label="Box plot with outlier points">${svg}</svg>`;
+}
+
+/* Shortcut: jump to Wrangle tab with operation pre-filled (+ suggested method) */
+function prefillWrangle(opType, col, suggest = '') {
   switchTab('wrangle');
   document.getElementById('op-type').value = opType;
   if (col) document.getElementById('op-column').value = col;
   renderOpParams();
+  if (suggest) {
+    if (opType === 'fill_missing') {
+      const sel = document.getElementById('p-fill-method');
+      if (sel) { sel.value = suggest; toggleCustomFill(); }
+    } else if (opType === 'handle_outliers') {
+      const sel = document.getElementById('p-outlier-method');
+      if (sel) sel.value = suggest;
+    }
+  }
 }
 
 /* ── Wrangle tab ────────────────────────────────────────────────────────── */

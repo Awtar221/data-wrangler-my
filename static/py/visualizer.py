@@ -131,8 +131,8 @@ def _box(col, group_col=None):
     bp_kw = dict(patch_artist=True, boxprops=dict(facecolor=BORDER, color=SERIES, linewidth=1.2),
                  medianprops=dict(color=EMPH, linewidth=2),
                  whiskerprops=dict(color=MUTED), capprops=dict(color=MUTED),
-                 flierprops=dict(marker='o', markerfacecolor=MUTED, markeredgecolor='none',
-                                 markersize=3, alpha=0.6))
+                 flierprops=dict(marker='o', markerfacecolor=PALETTE[5], markeredgecolor='none',
+                                 markersize=3.5, alpha=0.85))
     if group_col and group_col in _df.columns:
         grouped = [(str(k)[:15], g[col].dropna().values) for k, g in _df.groupby(group_col)][:10]
         labels  = [k for k, _ in grouped]

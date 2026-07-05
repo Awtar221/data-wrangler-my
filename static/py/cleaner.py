@@ -130,6 +130,78 @@ def _stats():
 
 # ── Quality report ────────────────────────────────────────────────────────────
 
+def _col_dist(nonnull):
+    """24-bin histogram + markers, drawn as an inline sparkline in the UI."""
+    counts, edges = np.histogram(nonnull, bins=24)
+    return {
+        'bins':   [int(c) for c in counts],
+        'min':    round(float(edges[0]), 4),
+        'max':    round(float(edges[-1]), 4),
+        'mean':   round(float(nonnull.mean()), 4),
+        'median': round(float(nonnull.median()), 4),
+    }
+
+
+def _col_box(nonnull, lo, hi):
+    """Five-number summary + sampled outlier points for the mini box plot."""
+    inside = nonnull[(nonnull >= lo) & (nonnull <= hi)]
+    outs = nonnull[(nonnull < lo) | (nonnull > hi)]
+    if len(outs) > 40:
+        outs = outs.sample(40, random_state=0)
+    q1, q3 = float(nonnull.quantile(.25)), float(nonnull.quantile(.75))
+    return {
+        'min':      round(float(nonnull.min()), 4),
+        'max':      round(float(nonnull.max()), 4),
+        'q1':       round(q1, 4),
+        'median':   round(float(nonnull.median()), 4),
+        'q3':       round(q3, 4),
+        # whiskers: furthest data points still inside the IQR fences
+        'whisk_lo': round(float(inside.min()) if len(inside) else q1, 4),
+        'whisk_hi': round(float(inside.max()) if len(inside) else q3, 4),
+        'points':   [round(float(v), 4) for v in outs],
+    }
+
+
+def _skew(nonnull):
+    if len(nonnull) < 3 or nonnull.std() == 0:
+        return 0.0
+    s = float(nonnull.skew())
+    return 0.0 if not math.isfinite(s) else round(s, 2)
+
+
+def _recommend_fill(col):
+    """Suggest a fill method from the column's distribution shape."""
+    if not pd.api.types.is_numeric_dtype(_df[col]):
+        return {'method': 'mode',
+                'label': 'Mode',
+                'reason': 'Categorical column — fill with the most frequent value.'}
+    nonnull = _df[col].dropna()
+    if not len(nonnull):
+        return {'method': 'zero', 'label': 'Zero',
+                'reason': 'Column is entirely empty — no distribution to estimate from.'}
+    sk = _skew(nonnull)
+    if abs(sk) <= 0.5:
+        return {'method': 'mean', 'label': 'Mean',
+                'reason': f'Distribution is roughly symmetric (skew {sk:+.2f}) — the mean is a fair centre.'}
+    side = 'right' if sk > 0 else 'left'
+    return {'method': 'median', 'label': 'Median',
+            'reason': f'Distribution is {side}-skewed (skew {sk:+.2f}) — the mean is pulled toward the tail; the median resists it.'}
+
+
+def _recommend_outlier(col, pct):
+    nonnull = _df[col].dropna()
+    sk = _skew(nonnull)
+    if pct > 5:
+        return {'method': 'cap', 'label': 'Cap (Winsorize)',
+                'reason': f'{pct}% of rows are outliers — removing that many would distort the dataset; capping keeps every row.'}
+    if abs(sk) > 1:
+        side = 'right' if sk > 0 else 'left'
+        return {'method': 'cap', 'label': 'Cap (Winsorize)',
+                'reason': f'Distribution is heavily {side}-skewed (skew {sk:+.2f}) — extreme values may be a legitimate tail, so cap rather than delete.'}
+    return {'method': 'remove', 'label': 'Remove rows',
+            'reason': f'Few outliers ({pct}%) in a roughly symmetric distribution (skew {sk:+.2f}) — safe to remove.'}
+
+
 def _quality_report():
     qr = {
         'summary': {
@@ -146,11 +218,17 @@ def _quality_report():
         'typo_candidates':     {},
     }
 
-    # 1. Missing values
+    # 1. Missing values (+ fill recommendation and mini distribution)
     for col in _df.columns:
         n = int(_df[col].isnull().sum())
         if n:
-            qr['missing'][col] = {'count': n, 'pct': round(n / len(_df) * 100, 2)}
+            entry = {'count': n, 'pct': round(n / len(_df) * 100, 2),
+                     'recommend': _recommend_fill(col)}
+            if pd.api.types.is_numeric_dtype(_df[col]):
+                nonnull = _df[col].dropna()
+                if len(nonnull) >= 3:
+                    entry['dist'] = _col_dist(nonnull)
+            qr['missing'][col] = entry
 
     # 2. Type issues (object columns that are mostly numeric / datetime)
     for col in _df.select_dtypes(include='object').columns:
@@ -183,11 +261,14 @@ def _quality_report():
         lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
         n_out = int(((nonnull < lo) | (nonnull > hi)).sum())
         if n_out:
+            pct = round(n_out / len(_df) * 100, 2)
             qr['outliers'][col] = {
                 'count': n_out,
-                'pct': round(n_out / len(_df) * 100, 2),
+                'pct': pct,
                 'lower_bound': round(lo, 4),
                 'upper_bound': round(hi, 4),
+                'recommend': _recommend_outlier(col, pct),
+                'box': _col_box(nonnull, lo, hi),
             }
 
     # 4. Inconsistent formats
