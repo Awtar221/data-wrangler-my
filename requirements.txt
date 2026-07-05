@@ -1,0 +1,6 @@
+# NOT needed to run the app — all Python runs in-browser via Pyodide (see README).
+# These are optional dev dependencies for running static/py modules locally in tests.
+pandas>=2.1.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+seaborn>=0.13.0

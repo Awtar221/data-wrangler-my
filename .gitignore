@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+_trash/
+static/uploads/
+.impeccable/
+Thumbs.db
+.DS_Store
