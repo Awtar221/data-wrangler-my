@@ -73,20 +73,33 @@
 }
 .btn-ghost:hover { border-color: var(--faint); color: var(--text); }
 
+.col-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+}
+.col-link:hover,
+.col-link:focus-visible {
+  text-decoration: underline;
+  color: var(--cerulean, #47c7eb);
+}
+
 .op-btn {
   text-align: left;
-  padding: 5px 8px;
+  padding: 5px 12px;
   font-size: 11px;
   color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: transparent;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
   cursor: pointer;
 }
 .op-btn:hover {
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--accent);
   color: var(--text);
 }
 
@@ -167,7 +180,12 @@
   user-select: none;
 }
 .data-table th:hover { color: var(--text); }
-.data-table th.col-selected { color: var(--accent); background: rgba(25,185,230,0.08); }
+.data-table th.col-selected {
+  color: var(--accent);
+  /* tint layered over an opaque base — a transparent bg on a sticky header
+     lets scrolled cell text show through it */
+  background: linear-gradient(rgba(25,185,230,0.08), rgba(25,185,230,0.08)), var(--surface-2);
+}
 .data-table td {
   padding: 4px 12px;
   font-size: 11px;

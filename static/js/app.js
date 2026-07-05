@@ -201,7 +201,7 @@ function renderColumnList() {
     if ((qr.missing?.[col]?.pct ?? 0) > 30) dot = 'dot-error';
 
     const sel = col === S.selectedCol ? 'selected' : '';
-    return `<div class="col-item ${sel}" role="listitem button" tabindex="0" onclick="selectCol('${esc(col)}')" onkeydown="if(event.key==='Enter'||event.key===' ')selectCol('${esc(col)}')" aria-pressed="${col === S.selectedCol}" title="${esc(col)}">
+    return `<div class="col-item ${sel}" role="listitem button" tabindex="0" onclick="gotoColumn('${esc(col)}')" onkeydown="if(event.key==='Enter'||event.key===' ')gotoColumn('${esc(col)}')" aria-pressed="${col === S.selectedCol}" title="View ${esc(col)} in Data Preview">
       <span class="col-type-badge ${tcls}" aria-label="${tlbl} column">${tlbl}</span>
       <span class="flex-1 truncate">${esc(col)}</span>
       <span class="col-quality-dot ${dot}" aria-hidden="true"></span>
@@ -210,12 +210,32 @@ function renderColumnList() {
 }
 
 function selectCol(col) {
+  if (S.selectedCol === col) col = null;   // clicking the selected column deselects it
   S.selectedCol = col;
   renderColumnList();
   highlightTableCol(col);
   // Pre-fill the wrangle tab's column selector
   const sel = document.getElementById('op-column');
-  if (sel) sel.value = col;
+  if (sel) sel.value = col ?? '';
+}
+
+/* Select a column AND navigate to it in the Data Preview table */
+function gotoColumn(col) {
+  const deselecting = S.selectedCol === col;
+  selectCol(col);
+  if (deselecting) return;                 // toggled off — stay put, no navigation
+  switchTab('preview');
+  requestAnimationFrame(() => {
+    const idx = S.columns.indexOf(col);
+    if (idx < 0) return;
+    document.querySelectorAll('#table-head th')[idx]
+      ?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  });
+}
+
+/* Clickable column name used across the quality report */
+function colLink(col, extra = '') {
+  return `<button class="col-link log-col text-left ${extra}" onclick="gotoColumn('${esc(col)}')" title="View this column in Data Preview">${esc(col)}</button>`;
 }
 
 /* ── Data table ─────────────────────────────────────────────────────────── */
@@ -322,7 +342,7 @@ function renderQualityReport() {
         `<div class="anomaly-row flex-col items-stretch gap-1.5">
           <div class="flex items-center gap-2 w-full">
             ${pill(i.pct > 30 ? 'HIGH' : i.pct > 10 ? 'MED' : 'LOW', i.pct > 30 ? 'sev-high' : i.pct > 10 ? 'sev-medium' : 'sev-low')}
-            <span class="log-col flex-1">${esc(col)}</span>
+            ${colLink(col, 'flex-1')}
             <span class="text-prussian-300 text-[11px]">${i.count.toLocaleString()} null (${i.pct}%)</span>
             <button class="op-btn ml-2" onclick="prefillWrangle('fill_missing','${esc(col)}','${i.recommend?.method ?? ''}')">
               Fix${i.recommend ? ' with ' + esc(i.recommend.label) : ''}</button>
@@ -347,7 +367,7 @@ function renderQualityReport() {
       Object.entries(qr.type_issues).map(([col, i]) =>
         `<div class="anomaly-row">
           ${pill('TYPE','sev-medium')}
-          <span class="log-col flex-1">${esc(col)}</span>
+          ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[11px]">${i.current} → ${i.suggested} (${i.convertible_pct}% convertible)</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('convert_type','${esc(col)}')">Fix</button>
         </div>`).join(''));
@@ -360,7 +380,7 @@ function renderQualityReport() {
         `<div class="anomaly-row flex-col items-stretch gap-1.5">
           <div class="flex items-center gap-2 w-full">
             ${pill(i.pct > 5 ? 'HIGH' : 'MED', i.pct > 5 ? 'sev-high' : 'sev-medium')}
-            <span class="log-col flex-1">${esc(col)}</span>
+            ${colLink(col, 'flex-1')}
             <span class="text-prussian-300 text-[11px]">${i.count} outliers (${i.pct}%) IQR [${i.lower_bound}, ${i.upper_bound}]</span>
             <button class="op-btn ml-2" onclick="prefillWrangle('handle_outliers','${esc(col)}','${i.recommend?.method ?? ''}')">
               Fix with ${esc(i.recommend?.label ?? '')}</button>
@@ -379,7 +399,7 @@ function renderQualityReport() {
         const op = i.type === 'date_format' ? 'standardize_date' : 'standardize_case';
         return `<div class="anomaly-row">
           ${pill(i.type === 'date_format' ? 'DATE' : 'CASE','sev-low')}
-          <span class="log-col flex-1">${esc(col)}</span>
+          ${colLink(col, 'flex-1')}
           <span class="text-prussian-300 text-[10px]">${esc(detail)}</span>
           <button class="op-btn ml-2" onclick="prefillWrangle('${op}','${esc(col)}')">Fix</button>
         </div>`;
@@ -393,7 +413,7 @@ function renderQualityReport() {
         `<div class="anomaly-row flex-col items-start gap-2">
           <div class="flex items-center gap-2 w-full">
             ${pill('TYPO','sev-low')}
-            <span class="log-col">${esc(col)}</span>
+            ${colLink(col)}
             <button class="op-btn ml-auto" onclick="prefillWrangle('fix_typos','${esc(col)}')">Fix</button>
           </div>
           <div class="text-[10px] text-prussian-400 pl-10 space-y-0.5">
@@ -818,7 +838,7 @@ function populateVizSelects() {
 function updateVizControls() {
   const type      = document.getElementById('viz-type').value;
   const needsCol  = ['histogram','bar','scatter','box','line','pie'].includes(type);
-  const needsCol2 = ['scatter','box','line'].includes(type); // box: group-by, line: x-axis
+  const needsCol2 = ['scatter','box','line','bar'].includes(type); // box: group-by, line: x-axis, bar: aggregate value
   document.getElementById('viz-col').classList.toggle('hidden', !needsCol);
   document.getElementById('viz-col2').classList.toggle('hidden', !needsCol2);
 }
@@ -855,7 +875,9 @@ function renderCharts(charts) {
   gallery.innerHTML = charts.map((c, i) =>
     `<div class="chart-card" style="--i:${Math.min(i, 8)}">
       <h4>${esc(c.title ?? c.type)}</h4>
-      <img src="data:image/png;base64,${c.data}" alt="${esc(c.title ?? '')}" loading="lazy" />
+      ${c.message
+        ? `<p class="p-4 text-xs text-prussian-300 leading-relaxed">${esc(c.message)}</p>`
+        : `<img src="data:image/png;base64,${c.data}" alt="${esc(c.title ?? '')}" loading="lazy" />`}
     </div>`
   ).join('');
 }
