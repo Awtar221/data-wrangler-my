@@ -368,13 +368,18 @@
 }
 .chart-card img { width: 100%; display: block; }
 
-/* single chart fills the whole gallery row — but stays within one screen */
-.chart-card-wide { grid-column: 1 / -1; }
+/* single chart spans the gallery row but shrink-wraps to the image,
+   centered — no dead space left/right of the chart inside the card */
+.chart-card-wide {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: fit-content;
+  max-width: 100%;
+}
 .chart-card-wide img {
   width: auto;
   max-width: 100%;
   max-height: calc(100vh - 230px);   /* header + tab bar + viz controls + card title */
-  margin: 0 auto;
 }
 
 .chart-dl {
