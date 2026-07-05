@@ -902,7 +902,7 @@ function populateVizSelects() {
 function updateVizControls() {
   const type      = document.getElementById('viz-type').value;
   const needsCol  = ['histogram','bar','scatter','box','line','pie'].includes(type);
-  const needsCol2 = ['scatter','box','line','bar'].includes(type); // box: group-by, line: x-axis, bar: aggregate value
+  const needsCol2 = ['scatter','box','line','bar','pie'].includes(type); // box: group-by, line: x-axis, bar/pie: aggregate value
   document.getElementById('viz-col').classList.toggle('hidden', !needsCol);
   document.getElementById('viz-col2').classList.toggle('hidden', !needsCol2);
 }

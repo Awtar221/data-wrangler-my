@@ -66,7 +66,7 @@ def generate(config_json):
     elif kind == 'box'       and col:  charts.append(_box(col, col2))
     elif kind == 'line'      and col:  charts.append(_line(col, col2))
     elif kind == 'heatmap':            charts.append(_heatmap())
-    elif kind == 'pie'       and col:  charts.append(_pie(col))
+    elif kind == 'pie'       and col:  charts.append(_pie(col, col2))
     elif kind == 'auto':               charts = _auto()
 
     return json.dumps([c for c in charts if c])
@@ -200,8 +200,20 @@ def _line(col, x_col=None):
     return {'type': 'line', 'title': f'Line Chart  {col}', 'data': _b64(fig)}
 
 
-def _pie(col):
-    counts = _df[col].value_counts().head(8)
+def _pie(col, val_col=None):
+    # optional second (numeric) column: slices become sum of val_col per category
+    if val_col and val_col in _df.columns and val_col != col:
+        vals = pd.to_numeric(_df[val_col], errors='coerce')
+        counts = vals.groupby(_df[col]).sum().sort_values(ascending=False).head(8)
+        counts = counts[counts > 0]  # pie needs positive slices
+        if not len(counts):
+            return {'type': 'message', 'title': f'{val_col} by {col}',
+                    'message': f'"{val_col}" has no positive numeric values to aggregate. '
+                               'Pick a numeric second column, or convert it in Wrangle first.'}
+        title = f'Composition  Total {val_col} by {col}'
+    else:
+        counts = _df[col].value_counts().head(8)
+        title = f'Composition  {col}'
     if not len(counts):
         return None
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -217,9 +229,9 @@ def _pie(col):
     )
     for t in texts: t.set_color(MUTED); t.set_fontsize(9)
     for at in autotexts: at.set_color(TEXT); at.set_fontsize(8)
-    ax.set_title(f'Composition  {col}', fontsize=12, color=TEXT)
+    ax.set_title(title, fontsize=12, color=TEXT)
     plt.tight_layout()
-    return {'type': 'pie', 'title': f'Composition  {col}', 'data': _b64(fig)}
+    return {'type': 'pie', 'title': title, 'data': _b64(fig)}
 
 
 def _auto():
