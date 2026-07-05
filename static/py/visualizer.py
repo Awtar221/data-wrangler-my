@@ -60,11 +60,12 @@ def generate(config_json):
     col2 = cfg.get('column2')
     charts = []
 
+    # Convention: col = X axis, col2 = Y axis (UI states this per chart type)
     if   kind == 'histogram' and col:  charts.append(_histogram(col))
     elif kind == 'bar'       and col:  charts.append(_bar(col, col2))
     elif kind == 'scatter'   and col and col2: charts.append(_scatter(col, col2))
-    elif kind == 'box'       and col:  charts.append(_box(col, col2))
-    elif kind == 'line'      and col:  charts.append(_line(col, col2))
+    elif kind == 'box'       and col2: charts.append(_box(col2, col))   # y = col2, group x = col
+    elif kind == 'line'      and col2: charts.append(_line(col2, col)) # y = col2, x = col
     elif kind == 'heatmap':            charts.append(_heatmap())
     elif kind == 'pie'       and col:  charts.append(_pie(col, col2))
     elif kind == 'auto':               charts = _auto()
@@ -152,13 +153,14 @@ def _box(col, group_col=None):
         ax.boxplot([v for _, v in grouped], **bp_kw)
         ax.set_xticks(range(1, len(grouped) + 1))
         ax.set_xticklabels(labels, rotation=30, ha='right', fontsize=8)
-        ax.set_title(f'{col} by {group_col}', fontsize=12, pad=10)
+        title = f'{col} by {group_col}'
     else:
         ax.boxplot(_df[col].dropna(), **bp_kw)
-        ax.set_title(f'Box Plot  {col}', fontsize=12, pad=10)
+        title = f'Box Plot  {col}'
+    ax.set_title(title, fontsize=12, pad=10)
     ax.set_ylabel(col)
     plt.tight_layout()
-    return {'type': 'box', 'title': f'Box Plot  {col}', 'data': _b64(fig)}
+    return {'type': 'box', 'title': title, 'data': _b64(fig)}
 
 
 def _heatmap():

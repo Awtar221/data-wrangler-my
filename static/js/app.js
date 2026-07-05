@@ -893,24 +893,44 @@ async function undoOperation(i) {
 }
 
 /* ── Visualisation ──────────────────────────────────────────────────────── */
+/* Convention: first selector = X axis, second = Y axis. Placeholder text
+   states the role (and whether it's required) per chart type. */
+const VIZ_COLS = {
+  auto:      { x: null,                                    y: null },
+  histogram: { x: 'X — numeric column',                    y: null },
+  bar:       { x: 'X — category column',                   y: 'Y — numeric to average (optional: blank = counts)', yOptional: true },
+  scatter:   { x: 'X — numeric column',                    y: 'Y — numeric column' },
+  box:       { x: 'X — group by (optional)',               y: 'Y — numeric column', xOptional: true },
+  line:      { x: 'X — column (optional: blank = row order)', y: 'Y — numeric column', xOptional: true },
+  heatmap:   { x: null,                                    y: null },
+  pie:       { x: 'Slices — category column',              y: 'Slice size — numeric to total (optional: blank = counts)', yOptional: true },
+};
+
 function populateVizSelects() {
   const opts = S.columns.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  document.getElementById('viz-col').innerHTML  = `<option value="">Select column</option>` + opts;
-  document.getElementById('viz-col2').innerHTML = `<option value="">Second column (optional)</option>` + opts;
+  document.getElementById('viz-col').innerHTML  = `<option value=""></option>` + opts;
+  document.getElementById('viz-col2').innerHTML = `<option value=""></option>` + opts;
+  updateVizControls();   // set the placeholder text for the current chart type
 }
 
 function updateVizControls() {
-  const type      = document.getElementById('viz-type').value;
-  const needsCol  = ['histogram','bar','scatter','box','line','pie'].includes(type);
-  const needsCol2 = ['scatter','box','line','bar','pie'].includes(type); // box: group-by, line: x-axis, bar/pie: aggregate value
-  document.getElementById('viz-col').classList.toggle('hidden', !needsCol);
-  document.getElementById('viz-col2').classList.toggle('hidden', !needsCol2);
+  const meta = VIZ_COLS[document.getElementById('viz-type').value] ?? VIZ_COLS.auto;
+  const colX = document.getElementById('viz-col');
+  const colY = document.getElementById('viz-col2');
+  colX.classList.toggle('hidden', !meta.x);
+  colY.classList.toggle('hidden', !meta.y);
+  if (meta.x && colX.options.length) { colX.options[0].text = meta.x; colX.setAttribute('aria-label', meta.x); }
+  if (meta.y && colY.options.length) { colY.options[0].text = meta.y; colY.setAttribute('aria-label', meta.y); }
 }
 
 async function generateChart() {
   const type = document.getElementById('viz-type').value;
   const col  = document.getElementById('viz-col').value  || undefined;
   const col2 = document.getElementById('viz-col2').value || undefined;
+
+  const meta = VIZ_COLS[type] ?? {};
+  if (meta.x && !meta.xOptional && !col)  { toast(`Select the ${meta.x.split(' (')[0]}.`, 'error'); return; }
+  if (meta.y && !meta.yOptional && !col2) { toast(`Select the ${meta.y.split(' (')[0]}.`, 'error'); return; }
 
   const spinner = document.getElementById('viz-spinner');
   const btn     = document.getElementById('btn-generate');
