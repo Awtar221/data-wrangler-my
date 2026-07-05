@@ -56,6 +56,7 @@
   <div class="flex-1"></div>
   <div id="top-actions" class="flex items-center gap-2" style="display:none">
     <span id="shape-badge" class="text-xs text-prussian-300 font-mono bg-prussian-800 px-2 py-0.5 rounded border border-prussian-700"></span>
+    <button id="btn-close" class="btn-ghost text-xs px-3 py-1" title="Close this dataset and return to the upload screen">Close</button>
     <button id="btn-reset" class="btn-ghost text-xs px-3 py-1">Reset</button>
     <button id="btn-download" class="btn-primary text-xs px-3 py-1">
       <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
@@ -90,6 +91,33 @@
       </div>
       <input id="file-input" type="file" accept=".csv" class="sr-only" />
     </label>
+
+    <div class="flex items-center gap-3 my-6" aria-hidden="true">
+      <div class="flex-1 h-px bg-prussian-800"></div>
+      <span class="text-prussian-400 text-[10px] uppercase tracking-widest">or fetch Malaysian open data</span>
+      <div class="flex-1 h-px bg-prussian-800"></div>
+    </div>
+
+    <div class="text-left bg-prussian-900 border border-prussian-800 rounded-xl p-4">
+      <p class="text-prussian-200 text-sm font-medium mb-1">Load from data.gov.my</p>
+      <p class="text-prussian-400 text-xs mb-3">Malaysia's official open data API. Pick a source, enter a dataset ID from the <span class="text-cerulean-400">Data Catalogue</span> page (e.g. <code class="font-mono">fuelprice</code>), and load it straight into the wrangler.</p>
+      <div class="flex flex-wrap gap-2">
+        <select id="api-source" class="select-field text-xs" aria-label="API source">
+          <option value="data-catalogue">Data Catalogue</option>
+          <option value="opendosm">OpenDOSM</option>
+          <option value="weather/forecast">Weather — 7-day forecast</option>
+          <option value="weather/warning">Weather — warnings</option>
+        </select>
+        <input id="api-id" list="api-id-presets" class="input-field text-xs flex-1 min-w-[10rem]" placeholder="dataset id, e.g. fuelprice" aria-label="Dataset ID" />
+        <datalist id="api-id-presets">
+          <option value="fuelprice"></option>
+          <option value="cpi_core"></option>
+        </datalist>
+        <input id="api-limit" type="number" min="1" step="1" class="input-field text-xs w-24" placeholder="limit" aria-label="Row limit (optional)" />
+        <button id="btn-api-load" class="btn-primary text-xs px-4 py-1.5">Load</button>
+      </div>
+      <p id="api-status" class="text-prussian-400 text-xs mt-2 hidden" aria-live="polite"></p>
+    </div>
 
     <div id="upload-error" class="hidden mt-4 text-red-400 text-sm bg-red-900/20 border border-red-800 rounded-lg px-4 py-2" role="alert"></div>
     <div id="upload-progress" class="hidden mt-6 flex items-center gap-3 justify-center text-prussian-300 text-sm" aria-live="polite">
@@ -271,6 +299,6 @@
 <div id="toast-container" class="fixed bottom-5 right-5 space-y-2 z-[100]" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-<script src="static/js/app.js?v=4"></script>
+<script src="static/js/app.js?v=6"></script>
 </body>
 </html>

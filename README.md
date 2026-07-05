@@ -48,7 +48,7 @@ There is no backend. The "server" is a static file host and can be replaced by G
 ```
 
 1. **Boot** — the page downloads the Pyodide runtime and Python packages (~30–60 MB, cached by the browser afterwards), then loads the app's two Python modules.
-2. **Upload** — a dropped CSV is read as text and parsed into an in-memory pandas DataFrame. A copy of the original is kept for Reset/Undo.
+2. **Load data** — either drop a CSV file, or fetch a dataset directly from **data.gov.my** (Malaysia's official open data portal) via its Data Catalogue, OpenDOSM, or Weather APIs — enter a dataset ID (e.g. `fuelprice`) and the records load straight into a pandas DataFrame (nested fields are auto-flattened). A copy of the original is kept for Reset/Undo.
 3. **Detect** — a quality report runs automatically over the whole dataset:
 
    | Anomaly | Detection method |

@@ -44,6 +44,19 @@ def load_csv(csv_text):
     return _dump(_build_state())
 
 
+def load_records(json_text):
+    """Load a list of JSON records (e.g. from the data.gov.my API).
+    Nested objects are flattened to dotted column names via json_normalize."""
+    global _df, _original_df, _op_log
+    records = json.loads(json_text)
+    if isinstance(records, dict):
+        records = records.get('data', [records])
+    _df = pd.json_normalize(records)
+    _original_df = _df.copy()
+    _op_log = []
+    return _dump(_build_state())
+
+
 # ── State snapshot ────────────────────────────────────────────────────────────
 
 def get_state():

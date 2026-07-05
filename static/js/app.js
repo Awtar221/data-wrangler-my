@@ -93,6 +93,56 @@ async function handleUpload(file) {
   }
 }
 
+/* ── data.gov.my API ────────────────────────────────────────────────────── */
+const API_BASE = 'https://api.data.gov.my/';
+
+function apiNeedsId() {
+  return !document.getElementById('api-source').value.startsWith('weather');
+}
+
+function updateApiControls() {
+  document.getElementById('api-id').classList.toggle('hidden', !apiNeedsId());
+}
+
+async function loadFromApi() {
+  const source = document.getElementById('api-source').value;
+  const id     = document.getElementById('api-id').value.trim();
+  const limit  = document.getElementById('api-limit').value.trim();
+  const status = document.getElementById('api-status');
+  const btn    = document.getElementById('btn-api-load');
+
+  if (apiNeedsId() && !id) { toast('Enter a dataset ID (see the data.gov.my Data Catalogue page).', 'error'); return; }
+
+  const url = new URL(API_BASE + source);
+  if (apiNeedsId()) url.searchParams.set('id', id);
+  if (limit) url.searchParams.set('limit', limit);
+
+  btn.disabled = true;
+  status.classList.remove('hidden');
+  status.textContent = 'Fetching from data.gov.my…';
+
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`data.gov.my responded ${r.status} — check the dataset ID.`);
+    const data = await r.json();
+    const records = Array.isArray(data) ? data : (data.data ?? []);
+    if (!records.length) throw new Error('The API returned no rows for this query.');
+
+    status.textContent = `Parsing ${records.length.toLocaleString()} rows…`;
+    S.pyodide.globals.set('_api_json', JSON.stringify(records));
+    const raw = await py('load_records(_api_json)');
+    applyState(JSON.parse(raw));
+    enterWorkspace(`data.gov.my — ${apiNeedsId() ? id : source}`);
+    toast(`Loaded ${records.length.toLocaleString()} rows from data.gov.my`, 'success');
+    status.classList.add('hidden');
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = 'text-red-400 text-xs mt-2';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function showUploadError(msg) {
   const el = document.getElementById('upload-error');
   el.textContent = msg;
@@ -731,6 +781,30 @@ function renderCharts(charts) {
   ).join('');
 }
 
+/* ── Close dataset: back to upload screen ───────────────────────────────── */
+function closeDataset() {
+  if (S.opLog.length &&
+      !confirm('Close this dataset? Applied operations will be discarded — Export CSV first if you want to keep the cleaned data.')) {
+    return;
+  }
+  document.getElementById('workspace').style.display   = 'none';
+  document.getElementById('top-actions').style.display = 'none';
+  document.getElementById('upload-screen').style.display = '';
+  document.getElementById('file-label').textContent = 'No file loaded';
+  document.getElementById('file-input').value = '';   // allow re-uploading the same file
+
+  Object.assign(S, {
+    columns: [], dtypes: {}, stats: {}, quality: {}, opLog: [],
+    selectedCol: null, currentPage: 0, totalRows: 0,
+  });
+  document.getElementById('column-list').innerHTML = '';
+  document.getElementById('chart-gallery').innerHTML = '';
+  showUploadError('');
+  const apiStatus = document.getElementById('api-status');
+  apiStatus.classList.add('hidden');
+  apiStatus.className = 'text-prussian-400 text-xs mt-2 hidden';
+}
+
 /* ── Reset ──────────────────────────────────────────────────────────────── */
 async function resetDataset() {
   try {
@@ -786,8 +860,13 @@ function initUI() {
   dz.addEventListener('dragleave', () => dz.classList.remove('drop-zone-active'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drop-zone-active'); handleUpload(e.dataTransfer.files[0]); });
 
+  document.getElementById('btn-api-load').addEventListener('click', loadFromApi);
+  document.getElementById('api-source').addEventListener('change', updateApiControls);
+  document.getElementById('api-id').addEventListener('keydown', e => { if (e.key === 'Enter') loadFromApi(); });
+
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
+  document.getElementById('btn-close').addEventListener('click', closeDataset);
   document.getElementById('btn-reset').addEventListener('click', resetDataset);
   document.getElementById('btn-download').addEventListener('click', exportCSV);
   document.getElementById('prev-page').addEventListener('click', () => { if (S.currentPage > 0) loadPage(S.currentPage - 1); });
