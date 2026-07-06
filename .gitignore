@@ -5,3 +5,7 @@ static/uploads/
 .impeccable/
 Thumbs.db
 .DS_Store
+.claude/
+graphify-out/
+DESIGN.md
+PRODUCT.md
