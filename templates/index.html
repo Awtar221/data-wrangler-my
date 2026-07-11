@@ -29,7 +29,7 @@
     }
   </script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="static/css/style.css?v=16" />
+  <link rel="stylesheet" href="static/css/style.css?v=24" />
 </head>
 <body class="h-full bg-prussian-950 text-prussian-100 font-sans overflow-hidden">
 
@@ -82,7 +82,7 @@
       </svg>
     </div>
     <h1 class="text-2xl font-bold font-display text-prussian-50 mb-2">Data Processing &amp; Visualisation</h1>
-    <p class="text-prussian-300 text-sm mb-8">Fetch Malaysian open data — or upload your own CSV — then inspect anomalies, apply wrangling operations manually, and generate visualisations.</p>
+    <p class="text-prussian-300 text-sm mb-8">Fetch Malaysian open data — or upload your own file — then inspect anomalies, apply wrangling operations manually, and generate visualisations.</p>
 
     <div class="text-left bg-prussian-900 border border-prussian-700 rounded-xl p-5">
       <p class="text-prussian-100 text-sm font-semibold mb-1">Load Malaysian open data</p>
@@ -106,7 +106,7 @@
 
     <div class="flex items-center gap-3 my-6" aria-hidden="true">
       <div class="flex-1 h-px bg-prussian-800"></div>
-      <span class="text-prussian-400 text-[10px] uppercase tracking-widest">or upload your own CSV</span>
+      <span class="text-prussian-400 text-[10px] uppercase tracking-widest">or upload your own file</span>
       <div class="flex-1 h-px bg-prussian-800"></div>
     </div>
 
@@ -117,12 +117,22 @@
           <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
         </svg>
         <div class="text-left">
-          <p class="text-prussian-200 font-medium text-sm">Drop CSV here or <span class="text-cerulean-400">browse</span></p>
-          <p class="text-prussian-400 text-xs mt-0.5">Supports .csv files only</p>
+          <p class="text-prussian-200 font-medium text-sm">Drop a file here or <span class="text-cerulean-400">browse</span></p>
+          <p class="text-prussian-400 text-xs mt-0.5">Supports CSV, JSON, and Excel (.xlsx/.xls) files</p>
         </div>
       </div>
-      <input id="file-input" type="file" accept=".csv" class="sr-only" />
+      <input id="file-input" type="file" accept=".csv,.json,.xlsx,.xls" class="sr-only" />
     </label>
+
+    <div id="item-picker" class="hidden mt-4 text-left bg-prussian-900 border border-prussian-700 rounded-xl p-4">
+      <p id="item-picker-title" class="text-prussian-100 text-sm font-semibold mb-1"></p>
+      <p id="item-picker-filename" class="text-prussian-400 text-xs mb-3"></p>
+      <div class="flex gap-2">
+        <select id="item-picker-select" class="select-field text-xs flex-1" aria-label="Choose an item to load"></select>
+        <button id="item-picker-load" class="btn-accent text-xs px-5 py-1.5">Load</button>
+        <button id="item-picker-cancel" class="btn-ghost text-xs px-3 py-1.5">Cancel</button>
+      </div>
+    </div>
 
     <div id="upload-error" class="hidden mt-4 text-red-400 text-sm bg-red-900/20 border border-red-800 rounded-lg px-4 py-2" role="alert"></div>
     <div id="upload-progress" class="hidden mt-6 flex items-center gap-3 justify-center text-prussian-300 text-sm" aria-live="polite">
@@ -191,6 +201,7 @@
             <span class="flex items-center gap-1"><span class="legend-swatch null-cell">null</span> missing</span>
             <span class="flex items-center gap-1"><span class="legend-swatch" style="background:rgba(25,185,230,0.14);box-shadow:inset 2px 0 0 #19b9e6">abc</span> changed by last op</span>
             <span class="flex items-center gap-1"><span class="legend-swatch" style="background:rgba(25,185,230,0.05);color:#19b9e6">col</span> selected column</span>
+            <span class="text-prussian-500">double-click a cell to edit</span>
           </div>
           <div class="flex-1"></div>
           <button id="prev-page" class="btn-ghost text-xs px-2 py-0.5" aria-label="Previous page">Prev</button>
@@ -247,6 +258,9 @@
                     <option value="filter_rows">Filter Rows</option>
                     <option value="drop_column">Drop Column</option>
                     <option value="rename_column">Rename Column</option>
+                    <option value="drop_row">Drop Row by Number</option>
+                    <option value="set_header_row">Promote Row to Header</option>
+                    <option value="sort_values">Sort Values</option>
                   </optgroup>
                 </select>
               </div>
@@ -332,6 +346,6 @@
 <div id="toast-container" class="fixed bottom-5 right-5 space-y-2 z-[100]" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-<script src="static/js/app.js?v=35"></script>
+<script src="static/js/app.js?v=46"></script>
 </body>
 </html>

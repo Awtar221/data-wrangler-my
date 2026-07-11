@@ -11,6 +11,8 @@ const S = {
   totalRows:   0,
   pageSize:    100,
   ignored:     new Set(),   // quality findings the user chose to ignore ("section:col")
+  sortCol:     null,        // column currently sorted by (backend-persisted, not a view-only sort)
+  sortDir:     null,        // 'asc' | 'desc' | null
 };
 
 /* ── Boot: load Pyodide + packages + Python modules ────────────────────── */
@@ -73,20 +75,101 @@ function toast(msg, type = 'info', ms = 3500) {
 }
 
 /* ── Upload ─────────────────────────────────────────────────────────────── */
+const FORMAT_MAP = {
+  csv:  { kind: 'text',     loader: 'load_csv'     },
+  json: { kind: 'text',     loader: 'load_records' },
+  xlsx: { kind: 'workbook', pkg: 'openpyxl', label: 'Excel (.xlsx)' },
+  xls:  { kind: 'workbook', pkg: 'xlrd',     label: 'Excel (.xls)'  },
+};
+
+async function finishLoad(pyCall, filename) {
+  const raw = await py(pyCall);
+  applyState(JSON.parse(raw));
+  enterWorkspace(filename);
+}
+
+async function pySetBytes(name, file) {
+  S.pyodide.globals.set(name, new Uint8Array(await file.arrayBuffer()));
+}
+
+/* Lazily micropip-install a format's parser package on first use, so
+   CSV/JSON-only users never pay the extra boot cost for Excel support. */
+const S_installedPkgs = new Set();
+async function ensurePackage(pkgName, label) {
+  if (S_installedPkgs.has(pkgName)) return;
+  const label_ = document.querySelector('#upload-progress span');
+  const prevText = label_?.textContent;
+  if (label_) label_.textContent = `Installing ${label} support…`;
+  try {
+    S.pyodide.globals.set('_pkg_name', pkgName);
+    await py(`
+import micropip
+await micropip.install(_pkg_name)
+    `);
+    S_installedPkgs.add(pkgName);
+  } finally {
+    if (label_ && prevText) label_.textContent = prevText;
+  }
+}
+
+/* Generic "pick one item, then load" panel — used by the Excel sheet picker. */
+function promptItemChoice({ file, title, items, loaderFn }) {
+  return new Promise((resolve) => {
+    const panel     = document.getElementById('item-picker');
+    const select    = document.getElementById('item-picker-select');
+    const loadBtn   = document.getElementById('item-picker-load');
+    const cancelBtn = document.getElementById('item-picker-cancel');
+
+    document.getElementById('item-picker-title').textContent = title;
+    document.getElementById('item-picker-filename').textContent = file.name;
+    select.innerHTML = items.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    panel.classList.remove('hidden');
+    document.getElementById('upload-progress').classList.add('hidden');
+
+    const cleanup = () => { panel.classList.add('hidden'); loadBtn.onclick = null; cancelBtn.onclick = null; };
+    loadBtn.onclick = async () => {
+      cleanup();
+      document.getElementById('upload-progress').classList.remove('hidden');
+      try {
+        await finishLoad(loaderFn(select.value), file.name);
+      } catch (err) {
+        showUploadError(err.message);
+      } finally {
+        document.getElementById('upload-progress').classList.add('hidden');
+        resolve();
+      }
+    };
+    cancelBtn.onclick = () => { cleanup(); resolve(); };
+  });
+}
+
 async function handleUpload(file) {
-  if (!file?.name.toLowerCase().endsWith('.csv')) {
-    showUploadError('Please upload a .csv file.');
+  const ext = file ? file.name.toLowerCase().split('.').pop() : '';
+  const fmt = FORMAT_MAP[ext];
+  if (!file || !fmt) {
+    showUploadError(`Unsupported file type. Supported: ${Object.keys(FORMAT_MAP).map(e => '.' + e).join(', ')}.`);
     return;
   }
   showUploadError('');
   document.getElementById('upload-progress').classList.remove('hidden');
 
   try {
-    const text = await file.text();
-    S.pyodide.globals.set('_csv_raw', text);
-    const raw = await py('load_csv(_csv_raw)');
-    applyState(JSON.parse(raw));
-    enterWorkspace(file.name);
+    if (fmt.kind === 'text') {
+      const text = await file.text();
+      S.pyodide.globals.set('_text_raw', text);
+      await finishLoad(`${fmt.loader}(_text_raw)`, file.name);
+    } else if (fmt.kind === 'workbook') {
+      await ensurePackage(fmt.pkg, fmt.label);
+      await pySetBytes('_bin_raw', file);
+      const sheets = JSON.parse(await py('list_excel_sheets(_bin_raw)'));
+      if (!sheets.length) throw new Error('No worksheets found in this file.');
+      if (sheets.length > 1) {
+        await promptItemChoice({ file, title: 'Choose a sheet', items: sheets,
+          loaderFn: (v) => `load_excel(_bin_raw, ${JSON.stringify(v)})` });
+      } else {
+        await finishLoad(`load_excel(_bin_raw, ${JSON.stringify(sheets[0])})`, file.name);
+      }
+    }
   } catch (err) {
     showUploadError(err.message);
   } finally {
@@ -242,7 +325,7 @@ function navigateToColumn(col) {
   requestAnimationFrame(() => {
     const idx = S.columns.indexOf(col);
     if (idx < 0) return;
-    document.querySelectorAll('#table-head th')[idx]
+    document.querySelectorAll('#table-head th')[idx + 1]   // +1: leading row-number column
       ?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   });
 }
@@ -254,7 +337,7 @@ function colLink(col, extra = '') {
 
 /* ── Data table ─────────────────────────────────────────────────────────── */
 function renderTable(preview) {
-  const { columns, data, total_rows, page, page_size } = preview;
+  const { columns, data, total_rows, page, page_size, row_index } = preview;
   const start = page * page_size;
   const end   = Math.min(start + page_size, total_rows);
 
@@ -269,19 +352,25 @@ function renderTable(preview) {
   }
 
   document.getElementById('table-head').innerHTML =
-    `<tr>${columns.map(c => headerCell(c)).join('')}</tr>`;
+    `<tr><th class="row-num-header" title="Row number — use this to target Drop Row / Promote Row to Header">#</th>${columns.map(c => headerCell(c)).join('')}</tr>`;
 
-  document.getElementById('table-body').innerHTML = data.map((row, ri) =>
-    `<tr>${columns.map(c => {
+  document.getElementById('table-body').innerHTML = data.map((row, ri) => {
+    const idx = row_index?.[ri];
+    return `<tr><td class="row-num-cell">
+      <span class="row-num">${idx ?? ''}</span>
+      <button class="row-delete-btn" onclick="dropRowDirect(${idx})" title="Remove row ${idx}" aria-label="Remove row ${idx}">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </td>${columns.map(c => {
       const val     = row[c];
       const isNull  = val === null || val === undefined;
       const changed = changedByCol[c]?.has(ri);
       const colSel  = c === S.selectedCol ? 'col-selected' : '';
       const cls     = [colSel, changed ? 'changed-cell' : '', isNull ? 'null-cell' : ''].filter(Boolean).join(' ');
-      const tip     = changed ? 'Changed by the last operation' : esc(String(val ?? ''));
-      return `<td class="${cls}" title="${tip}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
-    }).join('')}</tr>`
-  ).join('');
+      const tip     = changed ? 'Changed by the last operation' : (isNull ? 'null — double-click to edit' : esc(String(val)));
+      return `<td class="${cls}" title="${tip}" data-row="${idx}" data-col="${esc(c)}" data-value="${isNull ? '' : esc(String(val))}" ${isNull ? 'data-null="1"' : ''} ondblclick="editCell(this)">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
 }
 
 /* Data Wrangler-style header: name, missing/distinct counts, mini histogram, min/max */
@@ -290,7 +379,16 @@ function headerCell(c) {
   const missingPct  = st.null_pct ?? 0;
   const distinctPct = S.totalRows ? Math.round((st.unique_count ?? 0) / S.totalRows * 100) : 0;
   const sel = c === S.selectedCol ? 'col-selected' : '';
+  const sortDir  = S.sortCol === c ? S.sortDir : null;
+  const sortNext = sortDir === 'asc' ? 'descending' : sortDir === 'desc' ? 'default order' : 'ascending';
+  const sortIcon = sortDir === 'asc' ? '&#9650;' : sortDir === 'desc' ? '&#9660;' : '&#8645;';
   return `<th class="${sel}" onclick="selectCol('${esc(c)}')">
+    <button class="col-sort-btn ${sortDir ? 'active' : ''}" onclick="event.stopPropagation(); sortColumnDirect('${esc(c)}')" title="Sort by ${esc(c)} (click for ${sortNext})" aria-label="Sort by ${esc(c)}, currently ${sortDir ?? 'unsorted'}">
+      ${sortIcon}
+    </button>
+    <button class="col-delete-btn" onclick="event.stopPropagation(); dropColumnDirect('${esc(c)}')" title="Remove column ${esc(c)}" aria-label="Remove column ${esc(c)}">
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
     <div class="col-header-name" title="${esc(c)}">${esc(c)}</div>
     <div class="col-header-stats">
       <span>Missing: ${(st.null_count ?? 0).toLocaleString()} (${missingPct}%)</span>
@@ -323,8 +421,8 @@ function highlightTableCol(col) {
   document.querySelectorAll('.data-table th, .data-table td').forEach(el => el.classList.remove('col-selected'));
   const idx = S.columns.indexOf(col);
   if (idx < 0) return;
-  document.querySelectorAll('#table-head th')[idx]?.classList.add('col-selected');
-  document.querySelectorAll(`#table-body tr td:nth-child(${idx + 1})`).forEach(td => td.classList.add('col-selected'));
+  document.querySelectorAll('#table-head th')[idx + 1]?.classList.add('col-selected');   // +1: leading row-number column
+  document.querySelectorAll(`#table-body tr td:nth-child(${idx + 2})`).forEach(td => td.classList.add('col-selected'));
 }
 
 async function loadPage(page) {
@@ -821,6 +919,37 @@ const OP_META = {
         <input id="p-rename" type="text" class="input-field w-full" placeholder="New name…" />
       </div>`,
   },
+  drop_row: {
+    needsCol: false,
+    desc: 'Permanently remove one row, identified by the row number shown in the leftmost column of Data Preview.',
+    params: () => `
+      <div>
+        <label class="field-label">Row Number</label>
+        <input id="p-row" type="number" min="0" class="input-field w-full" placeholder="Row # from Data Preview…" />
+      </div>`,
+  },
+  set_header_row: {
+    needsCol: false,
+    desc: 'Use one row\'s values as the new column names, identified by the row number shown in the leftmost column of Data Preview. That row is then removed.',
+    params: () => `
+      <div>
+        <label class="field-label">Row Number</label>
+        <input id="p-row" type="number" min="0" class="input-field w-full" placeholder="Row # from Data Preview…" />
+      </div>`,
+  },
+  sort_values: {
+    needsCol: true,
+    desc: 'Reorder every row by the selected column\'s values, or restore the original load order. Nulls sort last. This changes the dataset itself, not just the view — same as any other operation, undo from the Operation Log.',
+    params: () => `
+      <div>
+        <label class="field-label">Direction</label>
+        <select id="p-sort-dir" class="select-field w-full">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+          <option value="default">Default (original order)</option>
+        </select>
+      </div>`,
+  },
 };
 
 function renderOpParams() {
@@ -860,12 +989,23 @@ function buildParams(opType) {
       value:     document.getElementById('p-filter-val')?.value,
     };
     case 'rename_column': return { new_name: document.getElementById('p-rename')?.value?.trim() };
+    case 'drop_row':
+    case 'set_header_row': return { row: document.getElementById('p-row')?.value };
+    case 'sort_values':    return { direction: document.getElementById('p-sort-dir')?.value ?? 'asc' };
     case 'fix_typos': {
       const col = document.getElementById('op-column')?.value;
       return { mapping: S.quality.typo_candidates?.[col] ?? {} };
     }
     default: return {};
   }
+}
+
+async function runOperation(opType, col, params) {
+  S.pyodide.globals.set('_op_type', opType);
+  S.pyodide.globals.set('_op_col',  col ?? '');
+  S.pyodide.globals.set('_op_params', JSON.stringify(params));
+  const raw = await py('apply_operation(_op_type, _op_col or None, _op_params)');
+  return JSON.parse(raw);
 }
 
 async function applyOperation() {
@@ -886,6 +1026,12 @@ async function applyOperation() {
   if (opType === 'split_datetime' && !col) {
     toast('Pick the date column to split.', 'error'); return;
   }
+  if ((opType === 'drop_row' || opType === 'set_header_row') && params.row === '') {
+    toast('Enter a row number.', 'error'); return;
+  }
+  if (opType === 'sort_values' && params.direction !== 'default' && !col) {
+    toast('Pick a column to sort by.', 'error'); return;
+  }
 
   const spinner = document.getElementById('op-spinner');
   const btn     = document.getElementById('btn-apply-op');
@@ -894,13 +1040,14 @@ async function applyOperation() {
   resultEl.textContent = '';
 
   try {
-    S.pyodide.globals.set('_op_type', opType);
-    S.pyodide.globals.set('_op_col',  col ?? '');
-    S.pyodide.globals.set('_op_params', JSON.stringify(params));
-    const raw  = await py('apply_operation(_op_type, _op_col or None, _op_params)');
-    const data = JSON.parse(raw);
+    const data = await runOperation(opType, col, params);
 
     if (data.ok) {
+      if (opType === 'sort_values') {
+        const isDefault = params.direction === 'default';
+        S.sortCol = isDefault ? null : col;
+        S.sortDir = isDefault ? null : params.direction;
+      }
       applyState(data);
       const label = opType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       const detail = [];
@@ -920,6 +1067,130 @@ async function applyOperation() {
     spinner.classList.add('hidden');
     btn.disabled = false;
   }
+}
+
+/* Delete a row straight from Data Preview, without opening the Wrangle tab.
+   Routes through the same apply_operation path, so it's logged and undoable. */
+async function dropRowDirect(idx) {
+  try {
+    const data = await runOperation('drop_row', null, { row: idx });
+    if (data.ok) {
+      applyState(data);
+      toast(`Row ${idx} removed — undo from the Operation Log`, 'success');
+      updateLogBadge();
+    } else {
+      toast(data.error, 'error');
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/* Delete a column straight from Data Preview, without opening the Wrangle tab.
+   Routes through the same apply_operation path, so it's logged and undoable. */
+async function dropColumnDirect(col) {
+  try {
+    const data = await runOperation('drop_column', col, {});
+    if (data.ok) {
+      if (S.selectedCol === col) S.selectedCol = null;
+      applyState(data);
+      toast(`Column "${col}" removed — undo from the Operation Log`, 'success');
+      updateLogBadge();
+    } else {
+      toast(data.error, 'error');
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/* Sort by a column straight from Data Preview, without opening the Wrangle tab.
+   Cycles ascending → descending → default (original order) on repeat clicks of
+   the same column. This is a live toggle, not a trail of operations: each click
+   first undoes this column's currently-active sort_values entry (if any), then
+   applies the new direction — so the log gains at most one entry for the whole
+   cycle, and going back to "default" undoes it rather than adding a new op. */
+async function sortColumnDirect(col) {
+  const current = S.sortCol === col ? S.sortDir : null;
+  const direction = current === 'asc' ? 'desc' : current === 'desc' ? 'default' : 'asc';
+
+  const activeIdx = S.opLog.map((op, i) => ({ op, i })).reverse()
+    .find(({ op }) => op.type === 'sort_values' && op.column === col && op.params?.direction !== 'default')?.i;
+
+  try {
+    // clear before the undo's own applyState() re-render, so that render
+    // reads the cleared sort state instead of the stale descending one
+    if (direction === 'default') { S.sortCol = null; S.sortDir = null; }
+
+    if (activeIdx != null && !(await undoOperationCore(activeIdx))) return;
+
+    if (direction === 'default') {
+      toast('Restored original row order', 'success');
+      return;
+    }
+
+    const data = await runOperation('sort_values', col, { direction });
+    if (data.ok) {
+      S.sortCol = col;
+      S.sortDir = direction;
+      applyState(data);
+      toast(`Sorted by "${col}" (${direction === 'asc' ? 'ascending' : 'descending'})`, 'success');
+    } else {
+      toast(data.error, 'error');
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/* Edit a single cell's value directly from Data Preview.
+   Routes through the same apply_operation path, so it's logged and undoable. */
+function editCell(td) {
+  if (td.querySelector('.cell-edit-input')) return;   // already editing this cell
+
+  const { row, col } = td.dataset;
+  const startVal = td.dataset.null === '1' ? '' : (td.dataset.value ?? '');
+  const originalHTML = td.innerHTML;
+
+  td.classList.add('editing');
+  td.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cell-edit-input';
+  input.value = startVal;
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = async (commit) => {
+    if (settled) return;
+    settled = true;
+    td.classList.remove('editing');
+    if (!commit || input.value === startVal) {
+      td.innerHTML = originalHTML;
+      return;
+    }
+    try {
+      const data = await runOperation('edit_cell', col, { row, value: input.value });
+      if (data.ok) {
+        applyState(data);
+        updateLogBadge();
+      } else {
+        toast(data.error, 'error');
+        td.innerHTML = originalHTML;
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+      td.innerHTML = originalHTML;
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
 }
 
 /* ── Op Log ─────────────────────────────────────────────────────────────── */
@@ -948,20 +1219,26 @@ function renderLog() {
   ).join('');
 }
 
+/* Shared core: undo op at index i, apply the resulting state, report failures.
+   Returns true on success so callers (e.g. sortColumnDirect) can chain their
+   own follow-up toast instead of the generic "Operation undone" one. */
+async function undoOperationCore(i) {
+  const raw  = await py(`undo_operation(${i})`);
+  const data = JSON.parse(raw);
+  if (!data.ok) { toast(data.error, 'error'); return false; }
+
+  applyState(data);
+  renderLog();
+  if (data.failed?.length) {
+    const names = data.failed.map(f => f.type.replace(/_/g, ' ')).join(', ');
+    toast(`Undone — but ${data.failed.length} later operation(s) no longer applied and were removed: ${names}`, 'error', 6000);
+  }
+  return true;
+}
+
 async function undoOperation(i) {
   try {
-    const raw  = await py(`undo_operation(${i})`);
-    const data = JSON.parse(raw);
-    if (!data.ok) { toast(data.error, 'error'); return; }
-
-    applyState(data);
-    renderLog();
-    if (data.failed?.length) {
-      const names = data.failed.map(f => f.type.replace(/_/g, ' ')).join(', ');
-      toast(`Undone — but ${data.failed.length} later operation(s) no longer applied and were removed: ${names}`, 'error', 6000);
-    } else {
-      toast('Operation undone', 'success');
-    }
+    if (await undoOperationCore(i)) toast('Operation undone', 'success');
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1120,9 +1397,11 @@ function doCloseDataset() {
   Object.assign(S, {
     columns: [], dtypes: {}, stats: {}, quality: {}, opLog: [],
     selectedCol: null, currentPage: 0, totalRows: 0,
+    sortCol: null, sortDir: null,
   });
   document.getElementById('column-list').innerHTML = '';
   document.getElementById('chart-gallery').innerHTML = '';
+  document.getElementById('item-picker').classList.add('hidden');
   showUploadError('');
   const apiStatus = document.getElementById('api-status');
   apiStatus.classList.add('hidden');
@@ -1136,6 +1415,8 @@ async function resetDataset() {
     const data = JSON.parse(raw);
     applyState(data);
     S.selectedCol = null;
+    S.sortCol = null;
+    S.sortDir = null;
     renderColumnList();
     toast('Dataset reset to original upload', 'info');
   } catch (err) {

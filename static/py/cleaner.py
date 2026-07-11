@@ -26,11 +26,18 @@ def _diff_changed(before, after):
     a, b = after.loc[common_idx], before.loc[common_idx]
     for c in common_cols:
         av, bv = a[c], b[c]
-        try:
-            m = av.ne(bv) & ~(av.isna() & bv.isna())
-        except Exception:
-            m = av.astype(str) != bv.astype(str)
-        labels = av.index[m]
+        if av.dtype != bv.dtype:
+            # a dtype change (e.g. convert_type to datetime) alters every
+            # cell's representation even when pandas considers the values
+            # "equal" (a Timestamp compares equal to its own ISO string,
+            # so the value-only comparison below would miss it entirely)
+            labels = av.index[~(av.isna() & bv.isna())]
+        else:
+            try:
+                m = av.ne(bv) & ~(av.isna() & bv.isna())
+            except Exception:
+                m = av.astype(str) != bv.astype(str)
+            labels = av.index[m]
         if len(labels):
             changed[str(c)] = set(labels)
     return changed
@@ -66,27 +73,47 @@ def _to_datetime(s):
 
 # ── Load ──────────────────────────────────────────────────────────────────────
 
-def load_csv(csv_text):
+def _commit(df):
+    """Shared tail for every load_* entrypoint: install the new DataFrame as
+    the active dataset and reset per-session state (undo history, cell diff)."""
     global _df, _original_df, _op_log, _changed
-    _df = pd.read_csv(io.StringIO(csv_text))
+    _df = df
     _original_df = _df.copy()
     _op_log = []
     _changed = {}
     return _dump(_build_state())
+
+
+def load_csv(csv_text):
+    return _commit(pd.read_csv(io.StringIO(csv_text)))
 
 
 def load_records(json_text):
-    """Load a list of JSON records (e.g. from the data.gov.my API).
+    """Load a list of JSON records (from a file upload or the data.gov.my API).
     Nested objects are flattened to dotted column names via json_normalize."""
-    global _df, _original_df, _op_log, _changed
     records = json.loads(json_text)
     if isinstance(records, dict):
         records = records.get('data', [records])
-    _df = pd.json_normalize(records)
-    _original_df = _df.copy()
-    _op_log = []
-    _changed = {}
-    return _dump(_build_state())
+    return _commit(pd.json_normalize(records))
+
+
+def _to_bytes(js_buf):
+    """Convert a Uint8Array passed in from JS into real Python bytes."""
+    try:
+        return bytes(js_buf.to_py())
+    except AttributeError:
+        return bytes(js_buf)
+
+
+# ── Excel / workbook load ───────────────────────────────────────────────────
+
+def list_excel_sheets(js_buf):
+    xl = pd.ExcelFile(io.BytesIO(_to_bytes(js_buf)))
+    return json.dumps(xl.sheet_names)
+
+
+def load_excel(js_buf, sheet=0):
+    return _commit(pd.read_excel(io.BytesIO(_to_bytes(js_buf)), sheet_name=sheet))
 
 
 # ── State snapshot ────────────────────────────────────────────────────────────
@@ -127,6 +154,7 @@ def _preview(page=0, page_size=100):
         'columns': list(_df.columns),
         'dtypes': {c: str(_df[c].dtype) for c in _df.columns},
         'data': safe.to_dict(orient='records'),
+        'row_index': [int(i) for i in chunk.index],   # row identity — used to target drop_row / set_header_row
         'total_rows': len(_df),
         'total_cols': len(_df.columns),
         'page': page,
@@ -320,7 +348,10 @@ def _quality_report():
     # 4. Inconsistent formats
     for col in _df.select_dtypes(include='object').columns:
         nonnull = _df[col].dropna()
-        if not len(nonnull):
+        # object dtype doesn't guarantee string values (e.g. a column left over
+        # as object dtype from load-time inference but holding real numbers/etc.
+        # after rows were dropped) — .str accessor would raise on those
+        if not len(nonnull) or not nonnull.map(lambda v: isinstance(v, str)).all():
             continue
         date_pats = {
             'YYYY-MM-DD': r'^\d{4}-\d{2}-\d{2}$',
@@ -464,6 +495,66 @@ def _apply(op_type, col, params):
 
     elif op_type == 'replace_value':
         _df[col] = _df[col].replace(params.get('old'), params.get('new'))
+
+    elif op_type == 'drop_row':
+        idx = _row_index(params.get('row'))
+        _df = _df.drop(index=idx)
+
+    elif op_type == 'set_header_row':
+        idx = _row_index(params.get('row'))
+        _df.columns = _df.loc[idx].astype(str).tolist()
+        _df = _reinfer_dtypes(_df.drop(index=idx))
+
+    elif op_type == 'sort_values':
+        direction = params.get('direction', 'asc')
+        if direction == 'default':
+            # no operation ever renumbers the index, so sorting by it restores
+            # the original load order regardless of how many sorts came before
+            _df = _df.sort_index()
+        else:
+            # kind='stable' + no index reset: row identity (the # column,
+            # drop_row's target) stays tied to the original row, just reordered
+            _df = _df.sort_values(by=col, ascending=(direction == 'asc'),
+                                   na_position='last', kind='stable')
+
+    elif op_type == 'edit_cell':
+        idx = _row_index(params.get('row'))
+        _df.loc[idx, col] = _coerce_cell_value(_df[col].dtype, params.get('value'))
+
+
+def _coerce_cell_value(dtype, value):
+    """Parse a raw edit-cell string against the column's existing dtype,
+    reusing pandas' own coercion instead of hand-rolled int/float parsing."""
+    if value is None or value == '':
+        return np.nan
+    if pd.api.types.is_numeric_dtype(dtype):
+        return pd.to_numeric(pd.Series([value]), errors='coerce').iloc[0]
+    if pd.api.types.is_datetime64_any_dtype(dtype):
+        return pd.to_datetime(pd.Series([value]), errors='coerce').iloc[0]
+    return value
+
+
+def _reinfer_dtypes(df):
+    """Re-infer column dtypes after rows are dropped/promoted. Load-time dtype
+    inference can leave a column stuck as object dtype (e.g. a promoted header
+    row's text values forced the whole column to strings) even though the
+    remaining data is now purely numeric — this skips it for stats/histograms."""
+    df = df.infer_objects(copy=False)
+    for col in df.select_dtypes(include='object').columns:
+        converted = pd.to_numeric(df[col], errors='coerce')
+        # only adopt the numeric dtype if it doesn't silently null out real values
+        if converted.notna().sum() == df[col].notna().sum():
+            df[col] = converted
+    return df
+
+
+def _row_index(row):
+    """Resolve a row-picker value (the row number shown in Data Preview,
+    i.e. the DataFrame's own index label) to a real row, or raise a clear error."""
+    idx = int(row)
+    if idx not in _df.index:
+        raise ValueError(f'Row {idx} not found — it may have already been removed by an earlier operation.')
+    return idx
 
 
 def _fill(col, method, custom=None):

@@ -1,5 +1,9 @@
 /* ── Custom Properties ─────────────────────────────────────── */
 :root {
+  /* app is dark-only — tells the browser to render native controls (number
+     spinners, date pickers, etc.) dark instead of their light-theme default */
+  color-scheme: dark;
+
   --bg:        #070c1d;
   --surface:   #0a1129;
   --surface-2: #142352;
@@ -164,7 +168,11 @@
 .dot-error   { background: #ef4444; }
 
 /* ── Data Table ────────────────────────────────────────────── */
-.data-table { border-collapse: collapse; }
+/* border-collapse: collapse + a sticky header is a known browser bug — collapsed
+   borders detach/shift from the sticky row during scroll. separate + 0 spacing
+   fixes it; since only border-right/border-bottom are set (no left/top), adjacent
+   cells still render a single 1px line, not a doubled one. */
+.data-table { border-collapse: separate; border-spacing: 0; }
 .data-table th {
   position: sticky; top: 0; z-index: 10;
   background: var(--surface-2);
@@ -180,6 +188,48 @@
 }
 .data-table th:last-child { border-right: none; }
 .data-table th:hover { color: var(--text); }
+.col-delete-btn {
+  position: absolute;
+  top: 4px; right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out-quart), background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+.data-table th:hover .col-delete-btn,
+.col-delete-btn:focus-visible { opacity: 1; }
+.col-delete-btn:hover, .col-delete-btn:focus-visible {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.col-sort-btn {
+  position: absolute;
+  top: 4px; left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  color: var(--faint);
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out-quart), background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+.data-table th:hover .col-sort-btn,
+.col-sort-btn:focus-visible,
+.col-sort-btn.active { opacity: 1; }
+.col-sort-btn:hover, .col-sort-btn:focus-visible {
+  background: rgba(25, 185, 230, 0.15);
+  color: var(--accent);
+}
+.col-sort-btn.active { color: var(--accent); }
 .col-header-name {
   font-size: 10px;
   font-weight: 600;
@@ -219,6 +269,39 @@
      lets scrolled cell text show through it */
   background: linear-gradient(rgba(25,185,230,0.08), rgba(25,185,230,0.08)), var(--surface-2);
 }
+.row-num-header, .row-num-cell {
+  color: var(--faint) !important;
+  cursor: default !important;
+  width: 1%;
+  white-space: nowrap;
+  overflow: visible !important;      /* never ellipsis-truncate the row number — it must match the real row index */
+  text-overflow: unset !important;
+  max-width: none !important;
+}
+.row-num-cell {
+  position: relative;
+  padding-right: 20px !important;   /* room for the delete button to overlay without ever affecting layout */
+}
+.row-delete-btn {
+  position: absolute;
+  top: 50%; right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out-quart), background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+tr:hover .row-delete-btn,
+.row-delete-btn:focus-visible { opacity: 1; }
+.row-delete-btn:hover, .row-delete-btn:focus-visible {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
 .data-table td {
   padding: 4px 12px;
   font-size: 11px;
@@ -234,6 +317,20 @@
 }
 .data-table td:last-child { border-right: none; }
 .data-table tr:hover td { background: rgba(51,87,204,0.07); color: var(--text); }
+.data-table td:not(.row-num-cell) { cursor: text; }
+.data-table td.editing { padding: 0; overflow: visible; }
+.cell-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 12px;
+  font: inherit;
+  text-align: center;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  outline: none;
+}
 .data-table td.null-cell { color: var(--faint); font-style: italic; }
 .data-table td.col-selected { background: rgba(25,185,230,0.05); }
 .legend-swatch {
