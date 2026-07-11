@@ -211,8 +211,8 @@ function renderColumnList() {
   }).join('');
 }
 
-function selectCol(col) {
-  if (S.selectedCol === col) col = null;   // clicking the selected column deselects it
+function selectCol(col, { toggle = true } = {}) {
+  if (toggle && S.selectedCol === col) col = null;   // clicking the selected column deselects it
   S.selectedCol = col;
   renderColumnList();
   highlightTableCol(col);
@@ -233,11 +233,7 @@ function gotoColumn(col) {
 /* Always select + navigate, never toggles off — used by quality report and
    log links, where clicking a reference to the selected column should still jump there */
 function viewColumn(col) {
-  S.selectedCol = col;
-  renderColumnList();
-  highlightTableCol(col);
-  const sel = document.getElementById('op-column');
-  if (sel) sel.value = col;
+  selectCol(col, { toggle: false });
   navigateToColumn(col);
 }
 
