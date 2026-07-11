@@ -29,6 +29,19 @@ PALETTE = ['#3987e5', '#199e70', '#c98500', '#008300',
            '#9085e9', '#e66767', '#d55181', '#d95926']
 SERIES  = PALETTE[0]   # single-series mark colour (blue)
 EMPH    = PALETTE[2]   # reference/annotation lines: mean, trend (yellow)
+CENTER  = 'dark'       # heatmap midpoint: 'dark' on dark themes, 'light' on light
+
+
+def set_theme(theme_json):
+    """Swap the module colour tokens; called from app.js on theme change."""
+    global BG, SURFACE, CARD, BORDER, TEXT, MUTED, PALETTE, SERIES, EMPH, CENTER
+    t = json.loads(theme_json)
+    BG, SURFACE, CARD  = t['bg'], t['surface'], t['card']
+    BORDER, TEXT, MUTED = t['border'], t['text'], t['muted']
+    PALETTE = t['palette']
+    SERIES  = t['series']
+    EMPH    = t['emph']
+    CENTER  = t['center']
 
 
 def _ax(fig, ax):
@@ -174,9 +187,9 @@ def _heatmap():
     size = max(6, len(cols))
     fig, ax = plt.subplots(figsize=(size, size - 1))
     _ax(fig, ax)
-    # center='dark': zero correlation recedes into the dark surface,
-    # strong +/- pop as blue/red — a light midpoint would glare on dark theme
-    sns.heatmap(corr, ax=ax, cmap=sns.diverging_palette(220, 20, s=80, center='dark', as_cmap=True),
+    # centre matches the theme surface: zero correlation recedes into the
+    # background, strong +/- pop as blue/red
+    sns.heatmap(corr, ax=ax, cmap=sns.diverging_palette(220, 20, s=80, center=CENTER, as_cmap=True),
                 annot=True, fmt='.2f', linewidths=0.5, linecolor=SURFACE,
                 annot_kws={'color': TEXT, 'size': 8}, vmin=-1, vmax=1,
                 cbar_kws={'shrink': 0.75})

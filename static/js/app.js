@@ -13,6 +13,47 @@ const S = {
   ignored:     new Set(),   // quality findings the user chose to ignore ("section:col")
 };
 
+/* ── Themes ─────────────────────────────────────────────────────────────── */
+/* UI colours live in CSS (html[data-theme] blocks); these are the matching
+   chart colours pushed into visualizer.py via set_theme(). */
+const THEMES = {
+  ocean: {
+    bg: '#070c1d', surface: '#0a1129', card: '#142352', border: '#1f347a',
+    text: '#ebeefa', muted: '#adbceb',
+    palette: ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'],
+    series: '#3987e5', emph: '#c98500', center: 'dark',
+  },
+  light: {
+    bg: '#ffffff', surface: '#ffffff', card: '#fafafa', border: '#d9d9de',
+    text: '#09090b', muted: '#52525b',
+    // user-picked 500s first (blue/green/purple/red/yellow), padded so pie/box never run out
+    palette: ['#3b82f6', '#22c55e', '#a855f7', '#ef4444', '#eab308', '#14b8a6', '#f97316', '#ec4899'],
+    series: '#3b82f6', emph: '#d97706', center: 'light',   // amber-600: yellow-500 is unreadable as a thin line on white
+  },
+  dark: {
+    bg: '#09090b', surface: '#131316', card: '#27272a', border: '#3f3f46',
+    text: '#fafafa', muted: '#a1a1aa',
+    // 400-level variants of the Light accents — same hues, readable on dark
+    palette: ['#60a5fa', '#4ade80', '#c084fc', '#f87171', '#facc15', '#2dd4bf', '#fb923c', '#f472b6'],
+    series: '#60a5fa', emph: '#facc15', center: 'dark',
+  },
+};
+
+function applyTheme(name) {
+  if (!THEMES[name]) name = 'ocean';
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem('mdw-theme', name); } catch {}
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    const on = b.dataset.theme === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  if (S.pyodide) {
+    S.pyodide.globals.set('_theme_config', JSON.stringify(THEMES[name]));
+    py('set_theme(_theme_config)').catch(err => console.error(err));
+  }
+}
+
 /* ── Boot: load Pyodide + packages + Python modules ────────────────────── */
 async function boot() {
   const bar    = document.getElementById('boot-bar');
@@ -47,6 +88,7 @@ async function boot() {
     ]);
     await S.pyodide.runPythonAsync(cleanerSrc);
     await S.pyodide.runPythonAsync(vizSrc);
+    applyTheme(document.documentElement.dataset.theme);  // sync chart colours with saved theme
 
     step(100, 'Ready');
     await new Promise(r => setTimeout(r, 300));
@@ -1183,6 +1225,9 @@ function initUI() {
   document.getElementById('btn-apply-op').addEventListener('click', applyOperation);
   document.getElementById('viz-type').addEventListener('change', populateVizSelects);
   document.getElementById('btn-generate').addEventListener('click', generateChart);
+  document.querySelectorAll('.theme-btn').forEach(b =>
+    b.addEventListener('click', () => applyTheme(b.dataset.theme)));
+  applyTheme(document.documentElement.dataset.theme);  // mark active picker button
 
   renderOpParams();
 }

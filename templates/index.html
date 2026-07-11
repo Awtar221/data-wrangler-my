@@ -4,18 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MyDataWrangler.my | Data Processing &amp; Visualisation</title>
+  <script>
+    // apply saved theme before first paint
+    document.documentElement.dataset.theme = localStorage.getItem('mdw-theme') || 'ocean';
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
+            // shades resolve through CSS variables so themes can remap them (see style.css)
             prussian: {
-              50: '#ebeefa', 100: '#d6ddf5', 200: '#adbceb', 300: '#859ae0',
-              400: '#5c78d6', 500: '#3357cc', 600: '#2945a3', 700: '#1f347a',
-              800: '#142352', 900: '#0a1129', 950: '#070c1d'
+              50: 'var(--p50)', 100: 'var(--p100)', 200: 'var(--p200)', 300: 'var(--p300)',
+              400: 'var(--p400)', 500: 'var(--p500)', 600: 'var(--p600)', 700: 'var(--p700)',
+              800: 'var(--p800)', 900: 'var(--p900)', 950: 'var(--p950)'
             },
-            cerulean: { 300: '#75d5f0', 400: '#47c7eb', 500: '#19b9e6', 600: '#1494b8' },
+            cerulean: { 300: 'var(--c300)', 400: 'var(--c400)', 500: 'var(--c500)', 600: 'var(--c600)' },
             yale:     { 400: '#389cfa', 500: '#0684f9', 600: '#0569c7' },
             navy:     { 800: '#002566', 900: '#001333', 950: '#000d24' }
           },
@@ -29,7 +34,7 @@
     }
   </script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="static/css/style.css?v=11" />
+  <link rel="stylesheet" href="static/css/style.css?v=12" />
 </head>
 <body class="h-full bg-prussian-950 text-prussian-100 font-sans overflow-hidden">
 
@@ -154,6 +159,10 @@
     <button class="tab-btn" data-tab="visualize" role="tab" aria-selected="false" aria-controls="tab-visualize" id="tbtn-visualize">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
       Visualise
+    </button>
+    <button class="tab-btn" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings" id="tbtn-settings">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+      Settings
     </button>
     </div>
     <div class="flex items-center gap-1.5 ml-auto self-center" title="Interface text size">
@@ -312,6 +321,42 @@
         <div id="chart-gallery" class="flex-1 overflow-y-auto custom-scroll p-4 grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-min" aria-live="polite" aria-label="Generated charts"></div>
       </div>
 
+      <!-- Settings -->
+      <div id="tab-settings" class="tab-content hidden flex-1 overflow-y-auto custom-scroll p-4" role="tabpanel" aria-labelledby="tbtn-settings" tabindex="0">
+        <div class="max-w-2xl mx-auto space-y-4">
+          <div class="quality-card">
+            <h3>Theme</h3>
+            <p class="text-prussian-400 text-xs mb-4">Changes both the interface colours and chart colours. Charts already in the gallery keep their old colours until you regenerate them.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Colour theme">
+              <button class="theme-btn" data-theme="ocean" role="radio" aria-checked="false">
+                <span class="theme-swatches">
+                  <span style="background:#070c1d"></span><span style="background:#142352"></span>
+                  <span style="background:#19b9e6"></span><span style="background:#3357cc"></span>
+                </span>
+                <span class="theme-name">Ocean</span>
+                <span class="theme-desc">Deep blue (default)</span>
+              </button>
+              <button class="theme-btn" data-theme="light" role="radio" aria-checked="false">
+                <span class="theme-swatches">
+                  <span style="background:#ffffff;border:1px solid #d9d9de"></span><span style="background:#22c55e"></span>
+                  <span style="background:#3b82f6"></span><span style="background:#a855f7"></span>
+                </span>
+                <span class="theme-name">Light</span>
+                <span class="theme-desc">White with bright accents</span>
+              </button>
+              <button class="theme-btn" data-theme="dark" role="radio" aria-checked="false">
+                <span class="theme-swatches">
+                  <span style="background:#09090b"></span><span style="background:#4ade80"></span>
+                  <span style="background:#60a5fa"></span><span style="background:#c084fc"></span>
+                </span>
+                <span class="theme-name">Dark</span>
+                <span class="theme-desc">Darker take on Light</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -331,6 +376,6 @@
 <div id="toast-container" class="fixed bottom-5 right-5 space-y-2 z-[100]" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-<script src="static/js/app.js?v=27"></script>
+<script src="static/js/app.js?v=28"></script>
 </body>
 </html>

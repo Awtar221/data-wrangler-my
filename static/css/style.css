@@ -1,5 +1,12 @@
 /* ── Custom Properties ─────────────────────────────────────── */
+/* Ocean (default). --p*/--c* feed the Tailwind palette in index.html;
+   the semantic vars feed the component styles below. */
 :root {
+  --p50:  #ebeefa; --p100: #d6ddf5; --p200: #adbceb; --p300: #859ae0;
+  --p400: #5c78d6; --p500: #3357cc; --p600: #2945a3; --p700: #1f347a;
+  --p800: #142352; --p900: #0a1129; --p950: #070c1d;
+  --c300: #75d5f0; --c400: #47c7eb; --c500: #19b9e6; --c600: #1494b8;
+
   --bg:        #070c1d;
   --surface:   #0a1129;
   --surface-2: #142352;
@@ -16,6 +23,48 @@
   /* Easing */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Light: white base, black text, 500-level accents (blue = primary accent) */
+html[data-theme="light"] {
+  --p50:  #09090b; --p100: #27272a; --p200: #3f3f46; --p300: #52525b;
+  --p400: #6b6b76; --p500: #8e8e99; --p600: #c2c2ca; --p700: #d9d9de;
+  --p800: #f0f0f2; --p900: #fafafa; --p950: #ffffff;
+  --c300: #93c5fd; --c400: #2563eb; --c500: #3b82f6; --c600: #1d4ed8;
+
+  --bg:        #ffffff;
+  --surface:   #fafafa;
+  --surface-2: #f0f0f2;
+  --border:    #d9d9de;
+  --primary:   #3b82f6;
+  --primary-h: #2563eb;
+  --accent:    #2563eb;
+  --highlight: #3b82f6;
+  --cerulean:  #1d4ed8;
+  --text:      #09090b;
+  --muted:     #52525b;
+  --faint:     #8e8e99;
+}
+
+/* Dark: neutral-grey darker version of Light, same accent family */
+html[data-theme="dark"] {
+  --p50:  #fafafa; --p100: #e4e4e7; --p200: #d4d4d8; --p300: #b9b9c0;
+  --p400: #a1a1aa; --p500: #71717a; --p600: #52525b; --p700: #3f3f46;
+  --p800: #27272a; --p900: #131316; --p950: #09090b;
+  --c300: #93c5fd; --c400: #60a5fa; --c500: #3b82f6; --c600: #2563eb;
+
+  --bg:        #09090b;
+  --surface:   #131316;
+  --surface-2: #27272a;
+  --border:    #3f3f46;
+  --primary:   #3b82f6;
+  --primary-h: #2563eb;
+  --accent:    #3b82f6;
+  --highlight: #60a5fa;
+  --cerulean:  #60a5fa;
+  --text:      #fafafa;
+  --muted:     #a1a1aa;
+  --faint:     #71717a;
 }
 
 /* ── Scrollbars ────────────────────────────────────────────── */
@@ -469,6 +518,29 @@
 }
 .btn-danger:hover  { background: rgba(239, 68, 68, 0.22); color: #fca5a5; }
 .btn-danger:active { transform: scale(0.97); }
+
+/* ── Theme picker ──────────────────────────────────────────── */
+.theme-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.theme-btn:hover { border-color: var(--faint); }
+.theme-btn.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.theme-swatches { display: flex; gap: 4px; }
+.theme-swatches span {
+  width: 16px; height: 16px; border-radius: 4px; display: inline-block;
+}
+.theme-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.theme-desc { font-size: 10px; color: var(--faint); }
 
 /* ── Reduced motion ────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
