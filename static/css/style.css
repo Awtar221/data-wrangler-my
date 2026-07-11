@@ -362,6 +362,15 @@ tr:hover .row-delete-btn,
 }
 .select-field:focus, .input-field:focus { border-color: var(--accent); }
 .select-field option { background: var(--surface-2); }
+/* number input spin buttons ignore color-scheme on some platforms (Windows
+   Chromium falls back to the OS-native light widget) and can't be recolored
+   directly — hide them rather than ship a light artifact in a dark UI */
+.input-field[type="number"] { -moz-appearance: textfield; }
+.input-field[type="number"]::-webkit-outer-spin-button,
+.input-field[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
 /* ── Accordion ─────────────────────────────────────────────── */
 .accordion-header {
