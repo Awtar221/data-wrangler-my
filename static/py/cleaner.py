@@ -161,6 +161,7 @@ def _stats():
                     'q25':    round(float(nonnull.quantile(.25)), 4),
                     'median': round(float(nonnull.median()), 4),
                     'q75':    round(float(nonnull.quantile(.75)), 4),
+                    'dist':   _col_dist(nonnull),
                 })
         else:
             top = _df[col].value_counts().head(5)
@@ -171,9 +172,13 @@ def _stats():
 
 # ── Quality report ────────────────────────────────────────────────────────────
 
-def _col_dist(nonnull):
-    """24-bin histogram + markers, drawn as an inline sparkline in the UI."""
-    counts, edges = np.histogram(nonnull, bins=24)
+def _col_dist(nonnull, max_bins=24):
+    """Histogram + markers, drawn as an inline sparkline in the UI.
+    Bin count is capped at the number of distinct values so low-cardinality
+    columns (e.g. a 0/1 flag) get one bar per value instead of spreading
+    across empty bins."""
+    n_bins = max(1, min(max_bins, nonnull.nunique()))
+    counts, edges = np.histogram(nonnull, bins=n_bins)
     return {
         'bins':   [int(c) for c in counts],
         'min':    round(float(edges[0]), 4),

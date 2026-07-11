@@ -150,6 +150,8 @@ function showUploadError(msg) {
 
 /* ── Apply server (Python) state ────────────────────────────────────────── */
 function applyState(data) {
+  if (data.stats)   { S.stats   = data.stats; }
+  if (data.quality) { S.quality = data.quality; }
   if (data.preview) {
     S.columns     = data.preview.columns     ?? S.columns;
     S.dtypes      = data.preview.dtypes      ?? S.dtypes;
@@ -157,8 +159,6 @@ function applyState(data) {
     S.currentPage = data.preview.page        ?? 0;
     renderTable(data.preview);
   }
-  if (data.stats)   { S.stats   = data.stats; }
-  if (data.quality) { S.quality = data.quality; }
   if (data.op_log)  { S.opLog   = data.op_log; renderLog(); }
 
   renderColumnList();
@@ -195,10 +195,12 @@ function renderColumnList() {
     const tcls  = isNum ? 'col-type-num' : isDt ? 'col-type-dt' : 'col-type-obj';
     const tlbl  = isNum ? 'num' : isDt ? 'dt' : 'str';
 
+    // ignored findings read as resolved for this dot, same as an actual fix
+    const has = (section) => qr[section]?.[col] && !S.ignored.has(`${section}:${col}`);
     let dot = 'dot-ok';
-    if (qr.missing?.[col] || qr.type_issues?.[col] || qr.outliers?.[col] ||
-        qr.inconsistent_formats?.[col] || qr.typo_candidates?.[col]) dot = 'dot-warn';
-    if ((qr.missing?.[col]?.pct ?? 0) > 30) dot = 'dot-error';
+    if (has('missing') || has('type_issues') || has('outliers') ||
+        has('inconsistent_formats') || has('typo_candidates')) dot = 'dot-warn';
+    if (has('missing') && (qr.missing[col]?.pct ?? 0) > 30) dot = 'dot-error';
 
     const sel = col === S.selectedCol ? 'selected' : '';
     return `<div class="col-item ${sel}" role="listitem button" tabindex="0" onclick="gotoColumn('${esc(col)}')" onkeydown="if(event.key==='Enter'||event.key===' ')gotoColumn('${esc(col)}')" aria-pressed="${col === S.selectedCol}" title="View ${esc(col)} in Data Preview">
@@ -219,11 +221,27 @@ function selectCol(col) {
   if (sel) sel.value = col ?? '';
 }
 
-/* Select a column AND navigate to it in the Data Preview table */
+/* Select a column AND navigate to it in the Data Preview table.
+   Toggles off (stays put) if the sidebar row clicked is already selected. */
 function gotoColumn(col) {
   const deselecting = S.selectedCol === col;
   selectCol(col);
   if (deselecting) return;                 // toggled off — stay put, no navigation
+  navigateToColumn(col);
+}
+
+/* Always select + navigate, never toggles off — used by quality report and
+   log links, where clicking a reference to the selected column should still jump there */
+function viewColumn(col) {
+  S.selectedCol = col;
+  renderColumnList();
+  highlightTableCol(col);
+  const sel = document.getElementById('op-column');
+  if (sel) sel.value = col;
+  navigateToColumn(col);
+}
+
+function navigateToColumn(col) {
   switchTab('preview');
   requestAnimationFrame(() => {
     const idx = S.columns.indexOf(col);
@@ -235,7 +253,7 @@ function gotoColumn(col) {
 
 /* Clickable column name used across the quality report */
 function colLink(col, extra = '') {
-  return `<button class="col-link log-col text-left ${extra}" onclick="gotoColumn('${esc(col)}')" title="View this column in Data Preview">${esc(col)}</button>`;
+  return `<button class="col-link log-col text-left ${extra}" onclick="viewColumn('${esc(col)}')" title="View this column in Data Preview">${esc(col)}</button>`;
 }
 
 /* ── Data table ─────────────────────────────────────────────────────────── */
@@ -249,29 +267,60 @@ function renderTable(preview) {
   document.getElementById('page-info').textContent =
     `Page ${page + 1} / ${Math.ceil(total_rows / page_size)}`;
 
-  const outlierCols = new Set(Object.keys(S.quality.outliers ?? {}));
   const changedByCol = {};
   for (const [c, positions] of Object.entries(preview.changed_cells ?? {})) {
     changedByCol[c] = new Set(positions);
   }
 
   document.getElementById('table-head').innerHTML =
-    `<tr>${columns.map(c =>
-      `<th class="${c === S.selectedCol ? 'col-selected' : ''}" onclick="selectCol('${esc(c)}')">${esc(c)}</th>`
-    ).join('')}</tr>`;
+    `<tr>${columns.map(c => headerCell(c)).join('')}</tr>`;
 
   document.getElementById('table-body').innerHTML = data.map((row, ri) =>
     `<tr>${columns.map(c => {
       const val     = row[c];
       const isNull  = val === null || val === undefined;
-      const isOut   = !isNull && outlierCols.has(c);
       const changed = changedByCol[c]?.has(ri);
       const colSel  = c === S.selectedCol ? 'col-selected' : '';
-      const cls     = [colSel, changed ? 'changed-cell' : '', isNull ? 'null-cell' : isOut ? 'outlier-cell' : ''].filter(Boolean).join(' ');
+      const cls     = [colSel, changed ? 'changed-cell' : '', isNull ? 'null-cell' : ''].filter(Boolean).join(' ');
       const tip     = changed ? 'Changed by the last operation' : esc(String(val ?? ''));
       return `<td class="${cls}" title="${tip}">${esc(isNull ? 'null' : String(val).slice(0, 60))}</td>`;
     }).join('')}</tr>`
   ).join('');
+}
+
+/* Data Wrangler-style header: name, missing/distinct counts, mini histogram, min/max */
+function headerCell(c) {
+  const st = S.stats[c] ?? {};
+  const missingPct  = st.null_pct ?? 0;
+  const distinctPct = S.totalRows ? Math.round((st.unique_count ?? 0) / S.totalRows * 100) : 0;
+  const sel = c === S.selectedCol ? 'col-selected' : '';
+  return `<th class="${sel}" onclick="selectCol('${esc(c)}')">
+    <div class="col-header-name" title="${esc(c)}">${esc(c)}</div>
+    <div class="col-header-stats">
+      <span>Missing: ${(st.null_count ?? 0).toLocaleString()} (${missingPct}%)</span>
+      <span>Distinct: ${(st.unique_count ?? 0).toLocaleString()} (${distinctPct}%)</span>
+    </div>
+    ${st.dist ? `${headerSpark(st.dist)}
+    <div class="col-header-range">
+      <span class="truncate" title="${st.dist.min}">Min ${st.dist.min}</span>
+      <span class="truncate" title="${st.dist.max}">Max ${st.dist.max}</span>
+    </div>` : ''}
+  </th>`;
+}
+
+function headerSpark(d, W = 168, H = 40) {
+  // trim leading/trailing empty bins so sparse-edge data (e.g. a 0/1 flag
+  // column) packs its bars together instead of spanning the full bin range
+  let lo = d.bins.findIndex(c => c > 0);
+  let hi = d.bins.length - 1 - [...d.bins].reverse().findIndex(c => c > 0);
+  if (lo < 0) { lo = 0; hi = d.bins.length - 1; }
+  const bins = d.bins.slice(lo, hi + 1);
+  const n = bins.length, max = Math.max(...bins, 1), bw = W / n;
+  const bars = bins.map((c, i) => {
+    const h = Math.max(c / max * (H - 2), c > 0 ? 1 : 0);
+    return `<rect x="${(i * bw + 0.3).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${Math.max(bw - 0.6, 0.5).toFixed(1)}" height="${h.toFixed(1)}" fill="var(--accent)" opacity="0.85"/>`;
+  }).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="col-sparkline" role="img" aria-label="Value distribution histogram, min ${d.min}, max ${d.max}">${bars}</svg>`;
 }
 
 function highlightTableCol(col) {
@@ -326,18 +375,21 @@ function ignoreFinding(section, col) {
   S.ignored.add(`${section}:${col}`);
   renderQualityReport();
   updateQualityBadge();
+  renderColumnList();
 }
 
 function restoreFinding(key) {
   S.ignored.delete(key);
   renderQualityReport();
   updateQualityBadge();
+  renderColumnList();
 }
 
 function restoreAllIgnored() {
   S.ignored.clear();
   renderQualityReport();
   updateQualityBadge();
+  renderColumnList();
 }
 
 function ignoreBtn(section, col) {
