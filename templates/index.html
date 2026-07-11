@@ -309,7 +309,9 @@
           <button id="btn-generate" class="btn-primary text-xs px-4 py-1.5">Generate Chart</button>
           <div id="viz-spinner" class="hidden" aria-hidden="true"><div class="spinner"></div></div>
         </div>
-        <div id="chart-gallery" class="flex-1 overflow-y-auto custom-scroll p-4 grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-min" aria-live="polite" aria-label="Generated charts"></div>
+        <div id="chart-gallery" class="flex-1 overflow-y-auto custom-scroll p-4 grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-min" aria-live="polite" aria-label="Generated charts">
+          <div class="col-span-2 text-center text-prussian-500 py-16 text-sm">No charts generated — select a column and chart type, then click Generate.</div>
+        </div>
       </div>
 
     </main>
