@@ -191,8 +191,16 @@ def _line(col, x_col=None):
     _ax(fig, ax)
     y = pd.to_numeric(_df[col], errors='coerce')
     if x_col and x_col in _df.columns:
-        ax.plot(_df[x_col], y, color=SERIES, linewidth=1.8)
+        x = _df[x_col]
+        # a time series only reads correctly in date order — the table's row
+        # order otherwise zigzags a line chart with no warning to the user
+        if pd.api.types.is_datetime64_any_dtype(x):
+            order = x.argsort()
+            x, y = x.iloc[order], y.iloc[order]
+        ax.plot(x, y, color=SERIES, linewidth=1.8)
         ax.set_xlabel(x_col)
+        if pd.api.types.is_datetime64_any_dtype(x):
+            fig.autofmt_xdate()
     else:
         ax.plot(y.values, color=SERIES, linewidth=1.8)
         ax.set_xlabel('Index')
