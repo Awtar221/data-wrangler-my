@@ -412,6 +412,49 @@ def apply_operation(op_type, column, params_json):
         return _dump({'ok': False, 'error': str(e), **_build_state()})
 
 
+def preview_operation(op_type, column, params_json, sample_limit=6):
+    """Dry-run an operation against a scratch copy of the live df — no mutation,
+    no op-log entry, no undo-history impact. Powers the Wrangle tab's live
+    preview: recomputed while the user configures an operation, before Apply
+    commits it for real."""
+    global _df
+    params = json.loads(params_json) if params_json else {}
+    col = column if column else None
+    saved = _df
+    try:
+        _df = saved.copy()
+        _apply(op_type, col, params)
+        after = _df
+    except Exception as e:
+        _df = saved
+        return _dump({'ok': False, 'error': str(e)})
+
+    changed = _diff_changed(saved, after)
+    sample = []
+    for c, labels in changed.items():
+        for lbl in sorted(labels):
+            if len(sample) >= sample_limit:
+                break
+            sample.append({
+                'row': int(lbl), 'column': str(c),
+                'before': saved.at[lbl, c] if c in saved.columns else None,
+                'after':  after.at[lbl, c],
+            })
+        if len(sample) >= sample_limit:
+            break
+
+    result = {
+        'ok': True,
+        'rows_removed':  len(saved) - len(after),
+        'cols_removed':  len([c for c in saved.columns if c not in after.columns]),
+        'cols_added':    len([c for c in after.columns if c not in saved.columns]),
+        'cells_changed': sum(len(v) for v in changed.values()),
+        'sample': sample,
+    }
+    _df = saved
+    return _dump(result)
+
+
 def _apply(op_type, col, params):
     global _df
 

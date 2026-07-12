@@ -429,6 +429,13 @@ tr:hover .row-delete-btn,
 .sev-medium { background: rgba(245,158,11,0.2); color: #fcd34d; }
 .sev-low    { background: rgba(51,87,204,0.2);  color: #adbceb; }
 
+/* ── Live operation preview ───────────────────────────────────── */
+#op-preview-card.op-preview-entering {
+  animation: tabFadeIn 0.15s var(--ease-out-quart) both;
+}
+#op-preview-body table td { border-bottom: 1px solid rgba(31,52,122,0.25); }
+#op-preview-body table tr:last-child td { border-bottom: none; }
+
 /* ── Spinner ───────────────────────────────────────────────── */
 .spinner {
   width: 16px; height: 16px;
@@ -460,6 +467,13 @@ tr:hover .row-delete-btn,
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+.toast.toast-leaving {
+  animation: slideOut 0.15s var(--ease-out-quart) both;
+}
+@keyframes slideOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(4px); }
+}
 
 /* ── Op Log ────────────────────────────────────────────────── */
 .log-entry {
@@ -479,6 +493,14 @@ tr:hover .row-delete-btn,
 }
 .log-text { color: var(--muted); flex: 1; }
 .log-col  { color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+
+.log-entry.log-entering {
+  animation: logEntryIn 0.25s var(--ease-out-quart) both;
+}
+@keyframes logEntryIn {
+  from { opacity: 0; transform: translateY(-4px); background: rgba(25,185,230,0.12); }
+  to   { opacity: 1; transform: translateY(0); background: transparent; }
+}
 
 /* ── Chart Card ────────────────────────────────────────────── */
 .chart-card {

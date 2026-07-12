@@ -13,6 +13,7 @@ const S = {
   ignored:     new Set(),   // quality findings the user chose to ignore ("section:col")
   sortCol:     null,        // column currently sorted by (backend-persisted, not a view-only sort)
   sortDir:     null,        // 'asc' | 'desc' | null
+  opLogRendered: 0,         // op count as of the last renderLog(), to flash only the newly-added entry
 };
 
 /* ── Boot: load Pyodide + packages + Python modules ────────────────────── */
@@ -71,7 +72,11 @@ async function py(code) {
 function toast(msg, type = 'info', ms = 3500) {
   const el = Object.assign(document.createElement('div'), { className: `toast ${type}`, textContent: msg });
   document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => el.remove(), ms);
+  const dismiss = () => {
+    el.classList.add('toast-leaving');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  };
+  setTimeout(dismiss, ms);
 }
 
 /* ── Upload ─────────────────────────────────────────────────────────────── */
@@ -249,6 +254,12 @@ function applyState(data) {
   updateQualityBadge();
   updateLogBadge();
   populateOpColumnSelect();
+
+  // the live data just changed underneath any pending/in-flight preview —
+  // drop it rather than risk it rendering against a config the last real
+  // Apply already overtook
+  S_previewToken++;
+  document.getElementById('op-preview-card')?.classList.add('hidden');
 }
 
 /* ── Workspace transition ───────────────────────────────────────────────── */
@@ -961,6 +972,8 @@ function renderOpParams() {
   document.getElementById('op-params').innerHTML    = meta.params();
   document.getElementById('op-description').innerHTML =
     `<p class="text-prussian-300">${meta.desc}</p>`;
+  document.getElementById('op-preview-card').classList.add('hidden');
+  schedulePreview();
 }
 
 function toggleCustomFill() {
@@ -1008,30 +1021,36 @@ async function runOperation(opType, col, params) {
   return JSON.parse(raw);
 }
 
+/* Shared by Apply (blocking, toasts) and the live preview (silent gate —
+   an incomplete form just withholds the preview, it doesn't nag). */
+// needsCol ops where an unpicked column ("All columns", or sort's own
+// "default order") is a real, supported choice — not just an unfinished
+// form — or that already have their own bespoke column message below.
+// Every other needsCol op requires a real column: applying one against
+// None previously reached the backend as a raw KeyError toast instead of
+// a clear message.
+const COL_OPTIONAL_OPS = new Set(['fill_missing', 'drop_missing_rows', 'split_datetime', 'sort_values']);
+
+function validateOpParams(opType, col, params) {
+  const meta = OP_META[opType];
+  if (meta?.needsCol && !col && !COL_OPTIONAL_OPS.has(opType)) return 'Pick a target column.';
+  if (opType === 'rename_column' && !params.new_name) return 'Enter a new column name.';
+  if (opType === 'replace_value' && (params.old == null || params.old === '')) return 'Enter a value to find.';
+  if (opType === 'split_datetime' && !params.components.length) return 'Tick at least one part to extract.';
+  if (opType === 'split_datetime' && !col) return 'Pick the date column to split.';
+  if ((opType === 'drop_row' || opType === 'set_header_row') && params.row === '') return 'Enter a row number.';
+  if (opType === 'sort_values' && params.direction !== 'default' && !col) return 'Pick a column to sort by.';
+  return null;
+}
+
 async function applyOperation() {
   const opType  = document.getElementById('op-type').value;
   const col     = document.getElementById('op-column').value || null;
   const params  = buildParams(opType);
   const resultEl = document.getElementById('op-result');
 
-  if (opType === 'rename_column' && !params.new_name) {
-    toast('Enter a new column name.', 'error'); return;
-  }
-  if (opType === 'replace_value' && (params.old == null || params.old === '')) {
-    toast('Enter a value to find.', 'error'); return;
-  }
-  if (opType === 'split_datetime' && !params.components.length) {
-    toast('Tick at least one part to extract.', 'error'); return;
-  }
-  if (opType === 'split_datetime' && !col) {
-    toast('Pick the date column to split.', 'error'); return;
-  }
-  if ((opType === 'drop_row' || opType === 'set_header_row') && params.row === '') {
-    toast('Enter a row number.', 'error'); return;
-  }
-  if (opType === 'sort_values' && params.direction !== 'default' && !col) {
-    toast('Pick a column to sort by.', 'error'); return;
-  }
+  const validationError = validateOpParams(opType, col, params);
+  if (validationError) { toast(validationError, 'error'); return; }
 
   const spinner = document.getElementById('op-spinner');
   const btn     = document.getElementById('btn-apply-op');
@@ -1067,6 +1086,121 @@ async function applyOperation() {
     spinner.classList.add('hidden');
     btn.disabled = false;
   }
+}
+
+/* ── Live operation preview (Wrangle tab) ──────────────────────────────────
+   Dry-runs the configured operation against a scratch df copy (preview_operation
+   in cleaner.py — never touches live state) and renders the effect before the
+   user commits with Apply. Debounced on every config change; a token counter
+   discards stale responses if the user edits faster than Pyodide can answer. */
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+let S_previewToken   = 0;
+let S_previewBusy    = false;   // a Pyodide dry-run is in flight
+let S_previewRequeue = false;   // another edit landed while busy — re-run once it finishes
+
+function fmtPreviewVal(v) {
+  return v === null || v === undefined || v === '' ? 'null' : String(v);
+}
+
+async function updateOpPreview() {
+  // Pyodide runs single-threaded: if a slow dry-run (large dataset) is still
+  // in flight, don't start a second one on top of it — queue a single
+  // trailing re-run instead so the globals set below can't be clobbered
+  // mid-call by an overlapping invocation.
+  if (S_previewBusy) { S_previewRequeue = true; return; }
+
+  const card    = document.getElementById('op-preview-card');
+  const body    = document.getElementById('op-preview-body');
+  const spinner = document.getElementById('op-preview-spinner');
+  const opType  = document.getElementById('op-type').value;
+  const col     = document.getElementById('op-column').value || null;
+  const params  = buildParams(opType);
+
+  if (validateOpParams(opType, col, params)) { card.classList.add('hidden'); return; }
+  if (!S.pyodide) return;
+
+  const wasHidden = card.classList.contains('hidden');
+  card.classList.remove('hidden');
+  if (wasHidden) {
+    card.classList.remove('op-preview-entering');
+    void card.offsetWidth;
+    card.classList.add('op-preview-entering');
+  }
+  spinner.classList.remove('hidden');
+
+  const myToken = ++S_previewToken;
+  S_previewBusy = true;
+  try {
+    S.pyodide.globals.set('_op_type', opType);
+    S.pyodide.globals.set('_op_col', col ?? '');
+    S.pyodide.globals.set('_op_params', JSON.stringify(params));
+    const raw  = await py('preview_operation(_op_type, _op_col or None, _op_params)');
+    if (myToken !== S_previewToken) return; // superseded by a newer edit
+    const data = JSON.parse(raw);
+    renderOpPreview(data, opType, col, params);
+  } catch (err) {
+    if (myToken === S_previewToken) body.innerHTML = `<p class="text-red-400">${esc(err.message)}</p>`;
+  } finally {
+    if (myToken === S_previewToken) spinner.classList.add('hidden');
+    S_previewBusy = false;
+    if (S_previewRequeue) { S_previewRequeue = false; schedulePreview(); }
+  }
+}
+const schedulePreview = debounce(updateOpPreview, 280);
+
+function renderOpPreview(data, opType, col, params) {
+  const body = document.getElementById('op-preview-body');
+  if (!data.ok) {
+    body.innerHTML = `<p class="text-red-400">${esc(data.error)}</p>`;
+    return;
+  }
+
+  // Row-reordering ops move values between index labels without changing
+  // any label's own value, so the cell-level diff sees "no change" — the
+  // dry-run counts don't tell this story; state it directly instead.
+  if (opType === 'sort_values') {
+    const isDefault = params.direction === 'default';
+    body.innerHTML = `<p class="text-prussian-200">${isDefault
+      ? 'Rows return to their original load order.'
+      : `Rows reorder by <span class="log-col">${esc(col)}</span> (${params.direction === 'asc' ? 'ascending' : 'descending'}).`}</p>`;
+    return;
+  }
+
+  const bits = [];
+  if (data.rows_removed  > 0) bits.push(`${data.rows_removed.toLocaleString()} row${data.rows_removed === 1 ? '' : 's'} removed`);
+  if (data.cols_removed  > 0) bits.push(`${data.cols_removed} column${data.cols_removed === 1 ? '' : 's'} removed`);
+  if (data.cols_added    > 0) bits.push(`${data.cols_added} column${data.cols_added === 1 ? '' : 's'} added`);
+  if (data.cells_changed > 0) bits.push(`${data.cells_changed.toLocaleString()} cell${data.cells_changed === 1 ? '' : 's'} would change`);
+
+  if (!bits.length) {
+    body.innerHTML = `<p class="text-prussian-400">No effect on the current data.</p>`;
+    return;
+  }
+
+  const shown = data.sample ?? [];
+  // long cell values (a paragraph of text, a wide JSON blob) would otherwise
+  // blow out this narrow panel — truncate for display, keep the full value
+  // in the title attribute on hover (same convention as the data table)
+  const cell = v => {
+    const full = fmtPreviewVal(v);
+    return { full, short: full.length > 40 ? full.slice(0, 40) + '…' : full };
+  };
+  const rows = shown.map(s => {
+    const before = cell(s.before), after = cell(s.after);
+    return `<tr>
+      <td class="pr-3 py-0.5 text-prussian-400 font-mono">${s.row}</td>
+      <td class="pr-3 py-0.5 log-col font-mono max-w-[8rem] truncate" title="${esc(s.column)}">${esc(s.column)}</td>
+      <td class="pr-2 py-0.5 font-mono text-prussian-300 max-w-[9rem] truncate" title="${esc(before.full)}">${esc(before.short)}</td>
+      <td class="pr-2 py-0.5 text-cerulean-400">&rarr;</td>
+      <td class="py-0.5 font-mono text-prussian-50 max-w-[9rem] truncate" title="${esc(after.full)}">${esc(after.short)}</td>
+    </tr>`;
+  }).join('');
+
+  const more = data.cells_changed - shown.length;
+  body.innerHTML = `
+    <p class="text-prussian-200 mb-2">${bits.join(', ')}.</p>
+    ${rows ? `<table class="text-[10px]"><tbody>${rows}</tbody></table>
+    ${more > 0 ? `<p class="text-prussian-500 mt-1">+ ${more.toLocaleString()} more</p>` : ''}` : ''}`;
 }
 
 /* Delete a row straight from Data Preview, without opening the Wrangle tab.
@@ -1206,8 +1340,9 @@ function renderLog() {
     el.innerHTML = `<p class="text-prussian-400 text-xs text-center py-3">No operations applied yet — applied steps appear here and can be undone individually.</p>`;
     return;
   }
+  const isNew = S.opLog.length > S.opLogRendered;
   el.innerHTML = S.opLog.map((op, i) =>
-    `<div class="log-entry">
+    `<div class="log-entry${isNew && i === S.opLog.length - 1 ? ' log-entering' : ''}">
       <span class="log-num">${i + 1}.</span>
       <div class="log-text flex-1">
         <span class="text-prussian-200 font-medium">${op.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
@@ -1217,6 +1352,7 @@ function renderLog() {
       <button class="op-btn ml-2" onclick="undoOperation(${i})" aria-label="Undo operation ${i + 1}" title="Undo this operation (later operations are re-applied)">Undo</button>
     </div>`
   ).join('');
+  S.opLogRendered = S.opLog.length;
 }
 
 /* Shared core: undo op at index i, apply the resulting state, report failures.
@@ -1509,6 +1645,10 @@ function initUI() {
 
   document.getElementById('op-type').addEventListener('change', renderOpParams);
   document.getElementById('op-column').addEventListener('change', renderOpParams);
+  // dynamic param fields (#op-params) are re-rendered per op-type, so listen
+  // via delegation on the tab instead of re-binding after every render
+  document.getElementById('tab-wrangle').addEventListener('input',  e => { if (e.target.closest('#op-params')) schedulePreview(); });
+  document.getElementById('tab-wrangle').addEventListener('change', e => { if (e.target.closest('#op-params')) schedulePreview(); });
   document.getElementById('btn-apply-op').addEventListener('click', applyOperation);
   document.getElementById('viz-type').addEventListener('change', populateVizSelects);
   document.getElementById('btn-generate').addEventListener('click', generateChart);
